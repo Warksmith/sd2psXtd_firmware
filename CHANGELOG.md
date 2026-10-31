@@ -8,6 +8,7 @@
 - Folder cards appear as soon as their directories are built, and their files are read behind them with console requests first. A file that cannot be read hides the card and drops what the console wrote since it appeared. An unchanged folder is built from its index, using a new `.ps2meta/tree.ok`. A folder-only boot card has started FreeMcBoot from one cold boot, which has not been repeated; `FolderSnapshot=ON` is the more tested route for a boot card.
 - Added `FolderSnapshot=ON` for folder cards, which keeps an 8 MB copy on SD so the card can be served immediately at the next mount, as an image is. Off by default. Only lightly tried on hardware.
 - Added `NewCardBackend=FOLDER` to the `[PS2]` settings, which creates new cards as folder cards. Existing cards and the boot card are unchanged. Not yet run on hardware.
+- Added USB storage mode: holding button 1 while connecting USB exposes the microSD card to the computer as a removable drive. Firmware update mode now uses button 2 only, where either button used to enter it.
 
 ### Bug Fixes
 

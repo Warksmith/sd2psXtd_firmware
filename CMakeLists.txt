@@ -46,6 +46,7 @@ add_executable(${TARGET_NAME}
     src/main.c
     src/ps2.c
     src/ps1.c
+    src/usb_storage.c
 
     src/game_db/game_db.c
     src/wear_leveling/wear_leveling.c
@@ -57,6 +58,14 @@ add_executable(${TARGET_NAME}
 target_compile_definitions(
     ${TARGET_NAME} PUBLIC
     PICO_XOSC_STARTUP_DELAY_MULTIPLIER=64
+    CFG_TUD_MSC=1
+    CFG_TUD_MSC_EP_BUFSIZE=16384
+)
+
+# USB storage mode swaps these out at runtime, see src/usb_storage.c
+target_link_options(${TARGET_NAME} PRIVATE
+    "LINKER:--wrap=tud_descriptor_device_cb"
+    "LINKER:--wrap=tud_descriptor_configuration_cb"
 )
 
 target_include_directories(${TARGET_NAME} PUBLIC

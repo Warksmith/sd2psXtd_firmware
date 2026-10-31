@@ -64,6 +64,12 @@ typedef struct sd_cid_t {
 } sd_cid_t;
 
 void sd_init(void);
+
+/* raw sector access, never used together with the sd_init() functions */
+uint32_t sd_raw_init(void);
+bool sd_raw_read(uint32_t sector, uint8_t *dst, size_t count);
+bool sd_raw_write(uint32_t sector, const uint8_t *src, size_t count);
+
 int sd_open(const char *path, int oflag);
 int sd_open_at(int dir, const char *name, int oflag);
 int sd_close(int fd);

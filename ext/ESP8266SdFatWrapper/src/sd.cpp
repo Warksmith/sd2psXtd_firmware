@@ -26,16 +26,43 @@ static SdFat sd;
 static File files[NUM_FILES + 1];
 static bool initialized = false;
 
+static void sd_pins_init() {
+    SD_PERIPH.setRX(SD_MISO);
+    SD_PERIPH.setTX(SD_MOSI);
+    SD_PERIPH.setSCK(SD_SCK);
+    SD_PERIPH.setCS(SD_CS);
+    gpio_set_drive_strength(SD_SCK, GPIO_DRIVE_STRENGTH_12MA);
+    gpio_set_drive_strength(SD_MOSI, GPIO_DRIVE_STRENGTH_12MA);
+    gpio_set_drive_strength(SD_CS, GPIO_DRIVE_STRENGTH_12MA);
+}
+
+/* Starts the card without mounting a filesystem, for when the host owns its contents.
+   SHARED_SPI ends every transfer before returning: with DEDICATED_SPI a write stays open
+   on the card after the call, and pulling USB at that point would lose it. */
+extern "C" uint32_t sd_raw_init() {
+    sd_pins_init();
+
+    if (!sd.cardBegin(SdSpiConfig(SD_CS, SHARED_SPI, SD_BAUD, &SD_PERIPH)))
+        fatal(ERR_SDCARD, "failed to open the card\nSdError: 0x%02X,0x%02X\ncheck the card", sd.sdErrorCode(), sd.sdErrorData());
+
+    uint32_t sectors = sd.card()->sectorCount();
+    if (sectors == 0)
+        fatal(ERR_SDCARD, "failed to read the card size\ncheck the card");
+
+    return sectors;
+}
+
+extern "C" bool sd_raw_read(uint32_t sector, uint8_t *dst, size_t count) {
+    return sd.card()->readSectors(sector, dst, count);
+}
+
+extern "C" bool sd_raw_write(uint32_t sector, const uint8_t *src, size_t count) {
+    return sd.card()->writeSectors(sector, src, count);
+}
+
 extern "C" void sd_init() {
     if (!initialized) {
-        SD_PERIPH.setRX(SD_MISO);
-        SD_PERIPH.setTX(SD_MOSI);
-        SD_PERIPH.setSCK(SD_SCK);
-        SD_PERIPH.setCS(SD_CS);
-        gpio_set_drive_strength(SD_SCK, GPIO_DRIVE_STRENGTH_12MA);
-        gpio_set_drive_strength(SD_MOSI, GPIO_DRIVE_STRENGTH_12MA);
-        gpio_set_drive_strength(SD_CS, GPIO_DRIVE_STRENGTH_12MA);
-
+        sd_pins_init();
 
         int ret = sd.begin(SdSpiConfig(SD_CS, DEDICATED_SPI, SD_BAUD, &SD_PERIPH));
 /*

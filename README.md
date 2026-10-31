@@ -144,6 +144,22 @@ set variant <retail|proto|conquest|arcade>
 
 `reset bl` resets to the bootloader. `reset dev` restarts the firmware. Card, channel, and game commands affect the currently active mode. Setting a PS2 variant also switches the device to PS2 mode.
 
+## General: USB Storage Mode
+
+Hold a button while connecting the device to a computer over USB to choose how it starts:
+
+| Held while connecting | Result |
+| --- | --- |
+| Nothing | Normal startup |
+| Button 1 | The microSD card appears on the computer as a removable drive |
+| Button 2 | Firmware update mode. If both buttons are held, this one wins |
+
+Firmware update mode used to start from either button. The dedicated BOOTSEL button on the board still works as before.
+
+USB storage mode gives the computer the whole card, and the firmware does not read or write its filesystem, so memory card emulation does not run. Connect only USB, with the device out of the console. Eject the drive on the computer before unplugging, so that the computer finishes its own cached writes. On devices with a display, the screen shows when it is safe to unplug. Unplug and reconnect to return to normal startup.
+
+USB on the RP2040 is limited to 12 Mbit/s, so expect under 1 MB/s. That suits saves and settings. Use a card reader for disc images.
+
 
 ## General: Settings File
 

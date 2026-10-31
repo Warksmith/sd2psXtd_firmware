@@ -16,6 +16,7 @@
 #include "pico/time.h"
 #include "sd.h"
 #include "settings.h"
+#include "usb_storage.h"
 #if WITH_PSRAM
 #include "psram/psram.h"
 #endif
@@ -31,17 +32,24 @@ uint flash_capacity = 0;
 uint flash_border = 0;
 
 
-/* reboot to bootloader if either button is held on startup
-   to make the device easier to flash when assembled inside case */
-static void check_bootloader_reset(void) {
+/* boot buttons, as indexes for input_is_down_raw() */
+#define BOOT_BTN_USB_STORAGE 0
+#define BOOT_BTN_BOOTLOADER 1
+
+/* reboot to bootloader if button 2 is held on startup to make the device
+   easier to flash when assembled inside case. returns true if button 1 is
+   held, which selects USB storage mode. button 2 wins if both are held */
+static bool check_boot_buttons(void) {
     /* make sure at least DEBOUNCE interval passes or we won't get inputs */
     for (int i = 0; i < 2 * DEBOUNCE_MS; ++i) {
         input_task();
         sleep_ms(1);
     }
 
-    if (input_is_down_raw(0) || input_is_down_raw(1))
+    if (input_is_down_raw(BOOT_BTN_BOOTLOADER))
         reset_usb_boot(0, 0);
+
+    return input_is_down_raw(BOOT_BTN_USB_STORAGE);
 }
 
 static void debug_task(void) {
@@ -78,7 +86,7 @@ int main() {
     int mhz = 240;
     input_init();
     update_flash_capacity();
-    check_bootloader_reset();
+    bool usb_storage = check_boot_buttons();
 
     QPRINTF("prepare...\n");
 
@@ -86,7 +94,9 @@ int main() {
     clock_configure(clk_peri, 0, CLOCKS_CLK_PERI_CTRL_AUXSRC_VALUE_CLK_SYS, mhz * 1000000, mhz * 1000000);
 
 #if DEBUG_USB_UART
-    stdio_usb_init();
+    /* storage mode takes the USB port for itself */
+    if (!usb_storage)
+        stdio_usb_init();
 #else
     stdio_uart_init_full(UART_PERIPH, UART_BAUD, UART_TX, UART_RX);
 #endif
@@ -104,6 +114,10 @@ int main() {
     QPRINTF("Splash base: 0x%X\n", FLASH_OFF_SPLASH);
 
     settings_init();
+
+    if (usb_storage)
+        usb_storage_run();
+
 #if WITH_PSRAM
     psram_init();
 #endif
