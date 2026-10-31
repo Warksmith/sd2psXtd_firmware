@@ -130,6 +130,7 @@ bool ps2_task(void) {
     if (((settings_get_mode(true) == MODE_PS1)
             || ps2_variant != settings_get_ps2_variant())
         && (ps2_cardman_is_idle())
+        && ps2_cardman_can_unload()
         && !ps2_history_tracker_needs_refresh())
         return false;
 
@@ -141,6 +142,8 @@ void ps2_deinit(void) {
     ps2_memory_card_exit();
     while (ps2_mc_data_interface_write_occured())
         ps2_mc_data_interface_task();
+    if (!ps2_cardman_can_unload())
+        ps2_mc_data_interface_flush();
     multicore_reset_core1();
     ps2_cardman_close();
     ps2_memory_card_unload();

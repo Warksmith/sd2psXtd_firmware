@@ -114,6 +114,25 @@ extern "C" int sd_open(const char *path, int oflag) {
 #define CHECK_FD(fd) if (fd >= NUM_FILES || !files[fd].isOpen()) return -1;
 #define CHECK_FD_VOID(fd) if (fd >= NUM_FILES || !files[fd].isOpen()) return;
 
+extern "C" int sd_open_at(int dir, const char *name, int oflag) {
+    size_t fd;
+
+    CHECK_FD(dir);
+
+    for (fd = 0; fd < NUM_FILES; ++fd)
+        if (!files[fd].isOpen())
+            break;
+
+    /* no fd available */
+    if (fd >= NUM_FILES)
+        return -1;
+
+    if (!files[fd].open(&files[dir], name, oflag))
+        return -1;
+
+    return fd;
+}
+
 extern "C" int sd_close(int fd) {
     CHECK_FD(fd);
 

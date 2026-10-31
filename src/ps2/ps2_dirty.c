@@ -2,6 +2,7 @@
 #include "history_tracker/ps2_history_tracker.h"
 #include "psram.h"
 #include "ps2_cardman.h"
+#include "ps2_folder_card.h"
 #include "debug.h"
 
 #include "bigmem.h"
@@ -14,6 +15,7 @@
 
 spin_lock_t *ps2_dirty_spin_lock;
 volatile uint32_t ps2_dirty_lockout;
+volatile uint32_t ps2_dirty_generation;
 int ps2_dirty_activity = 0;
 
 static int num_dirty;
@@ -42,6 +44,8 @@ void ps2_dirty_init(void) {
 }
 
 void __time_critical_func(ps2_dirty_mark)(uint32_t sector) {
+    ps2_dirty_generation++;
+
     if (sector < (sizeof(dirty_map) * 8)) {
         /* already marked? */
         if (dirty_map_is_marked(sector))
@@ -72,6 +76,10 @@ static void heapify(int i) {
         SWAP(dirty_heap[i], dirty_heap[best]);
         heapify(best);
     }
+}
+
+int ps2_dirty_pending(void) {
+    return num_dirty;
 }
 
 int ps2_dirty_get_marked(void) {
@@ -111,13 +119,18 @@ void ps2_dirty_task(void) {
             ps2_dirty_unlock();
             break;
         }
-        psram_read_dma(sector * 512, flushbuf, 512, NULL);
-        psram_wait_for_dma();
+        bool folder_card = ps2_folder_card_active();
+        if (!folder_card) {
+            psram_read_dma(sector * 512, flushbuf, 512, NULL);
+            psram_wait_for_dma();
+        }
         ps2_dirty_unlock();
 
         ++hit;
 
-        if (ps2_cardman_write_sector(sector, flushbuf) != 0) {
+        if (folder_card) {
+            ps2_folder_card_note_dirty(sector);
+        } else if (ps2_cardman_write_sector(sector, flushbuf) != 0) {
             // TODO: do something if we get too many errors?
             // for now lets push it back into the heap and try again later
             DPRINTF("!! writing sector 0x%x failed\n", sector);

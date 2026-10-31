@@ -53,6 +53,7 @@ bool settings_get_ps2_autoboot(void);
 void settings_set_ps2_autoboot(bool autoboot);
 bool settings_get_ps2_game_id(void);
 void settings_set_ps2_game_id(bool enabled);
+bool settings_get_ps2_new_card_folder(void);
 
 #define IDX_MIN 1
 #define IDX_BOOT 0

@@ -2,6 +2,7 @@
 
 #include <stdio.h>
 #include <string.h>
+#include <strings.h>
 
 #include "debug.h"
 #include "pico/multicore.h"
@@ -52,7 +53,8 @@ typedef struct {
 #define SETTINGS_PS1_FLAGS_CTRL_COMBO       (0b0000100)
 #define SETTINGS_PS2_FLAGS_AUTOBOOT         (0b0000001)
 #define SETTINGS_PS2_FLAGS_GAME_ID          (0b0000010)
-#define SETTINGS_SYS_FLAGS_PS2_MODE         (0b0000001)
+#define SETTINGS_PS2_FLAGS_NEW_CARD_FOLDER  (0b0000100)
+#define SETTINGS_SYS_FLAGS_PS2_MODE        (0b0000001)
 #define SETTINGS_SYS_FLAGS_FLIPPED_DISPLAY  (0b0000010)
 
 _Static_assert(sizeof(settings_t) == 24, "unexpected padding in the settings structure");
@@ -97,6 +99,9 @@ static int parse_card_configuration(void *user, const char *section, const char 
     } else if (MATCH("PS2", "GameID")
         && DIFFERS(value, ((_s->ps2_flags & SETTINGS_PS2_FLAGS_GAME_ID) > 0))) {
         _s->ps2_flags ^= SETTINGS_PS2_FLAGS_GAME_ID;
+    } else if (MATCH("PS2", "NewCardBackend")
+        && (strcasecmp(value, "FOLDER") == 0) != ((_s->ps2_flags & SETTINGS_PS2_FLAGS_NEW_CARD_FOLDER) > 0)) {
+        _s->ps2_flags ^= SETTINGS_PS2_FLAGS_NEW_CARD_FOLDER;
     } else if (MATCH("PS2", "CardSize")) {
         int size = atoi(value);
         switch (size) {
@@ -206,6 +211,8 @@ static void settings_serialize(void) {
         written = snprintf(line_buffer, 256, "Autoboot=%s\n", ((settings.ps2_flags & SETTINGS_PS2_FLAGS_AUTOBOOT) > 0) ? "ON" : "OFF");
         sd_write(fd, line_buffer, written);
         written = snprintf(line_buffer, 256, "GameID=%s\n", ((settings.ps2_flags & SETTINGS_PS2_FLAGS_GAME_ID) > 0) ? "ON" : "OFF");
+        sd_write(fd, line_buffer, written);
+        written = snprintf(line_buffer, 256, "NewCardBackend=%s\n", ((settings.ps2_flags & SETTINGS_PS2_FLAGS_NEW_CARD_FOLDER) > 0) ? "FOLDER" : "IMAGE");
         sd_write(fd, line_buffer, written);
         written = snprintf(line_buffer, 256, "CardSize=%u\n", settings.ps2_cardsize);
         sd_write(fd, line_buffer, written);
@@ -494,6 +501,10 @@ void settings_set_ps2_game_id(bool enabled) {
     if (enabled != settings_get_ps2_game_id())
         settings.ps2_flags ^= SETTINGS_PS2_FLAGS_GAME_ID;
     SETTINGS_UPDATE_FIELD(ps2_flags);
+}
+
+bool settings_get_ps2_new_card_folder(void) {
+    return (settings.ps2_flags & SETTINGS_PS2_FLAGS_NEW_CARD_FOLDER);
 }
 
 uint8_t settings_get_display_timeout() {

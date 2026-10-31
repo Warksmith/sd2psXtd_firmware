@@ -228,6 +228,14 @@ CardSize=8
 ```
 
 
+## PS2: Folder-Backed Memory Cards (experimental)
+
+On devices with PSRAM, an 8 MB PS2 card can keep its saves as ordinary files in a folder instead of a `.mcd` image. The console sees a normal formatted card, and changes are written back to the files in the background. Enable it per card by adding `StorageBackend=FOLDER` to the `[Settings]` section of the card's ini file. Existing images are never touched. To have new cards, including those Game ID creates, start as folder cards, set `NewCardBackend=FOLDER` in the `[PS2]` section of `.sd2psx/settings.ini`.
+
+A folder card appears once its directories are built, and its files are read behind it with whatever the console asks for going first. That can still be too late for a boot card. Adding `FolderSnapshot=ON` keeps an 8 MB copy on the SD card so the card is available immediately when nothing has changed, at the cost of the extra space and SD writes.
+
+This has not been validated on hardware yet, and saves that have not reached the SD card are lost in a power cut. See [doc/folder-cards.md](doc/folder-cards.md) before using it.
+
 ## General: Game2Folder mapping
 
 There are some games, that share save data for multiple game ids (like the Singstar series etc). For these cases, a custom game to folder mapping can be created.

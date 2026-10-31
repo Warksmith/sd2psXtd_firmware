@@ -176,9 +176,12 @@ static lv_obj_t *ui_header_create(lv_obj_t *parent, const char *text, bool inver
 static void update_bar(void) {
     static lv_point_t line_points[2] = {{0, DISPLAY_HEIGHT / 2}, {0, DISPLAY_HEIGHT / 2}};
     static int prev_progress;
-    if (current_progress / 5 == prev_progress / 5)
+    static const char *prev_status;
+    const char *status = ps2_cardman_get_storage_status();
+    if (current_progress / 5 == prev_progress / 5 && status == prev_status)
         return;
     prev_progress = current_progress;
+    prev_status = status;
     line_points[1].x = (lv_coord_t)(DISPLAY_WIDTH * current_progress / 100);
     lv_line_set_points(g_progress_bar, line_points, 2);
     lv_label_set_text(g_progress_text, ps2_cardman_get_progress_text());
@@ -459,6 +462,9 @@ static void update_main_header(void) {
     } else {
         lv_label_set_text(main_header, "USB Mode");
     }
+
+    if (settings_get_mode(true) == MODE_PS2 && ps2_cardman_get_storage_status())
+        lv_label_set_text(main_header, ps2_cardman_get_storage_status());
 }
 
 static void evt_go_back(lv_event_t *event) {
@@ -1293,7 +1299,12 @@ void gui_task(void) {
             static ps2_cardman_state_t cardman_state = PS2_CM_STATE_NORMAL;
             static char card_idx_s[8];
             static char card_channel_s[8];
+            static const char *displayed_storage_status;
 
+            if (displayed_storage_status != ps2_cardman_get_storage_status()) {
+                displayed_storage_status = ps2_cardman_get_storage_status();
+                update_main_header();
+            }
 
             if (displayed_card_idx != ps2_cardman_get_idx() || displayed_card_channel != ps2_cardman_get_channel() || cardman_state != ps2_cardman_get_state() ||
                 refresh_gui) {
@@ -1356,7 +1367,11 @@ void gui_task(void) {
 
         }
     }
-    if (splash_game_image_available
+    if (ps2_cardman_get_storage_status()) {
+        // The header is the only place that says a folder card is still working
+        if (ui_state == UI_STATE_GAME_IMG)
+            ui_state = UI_STATE_MAIN;
+    } else if (splash_game_image_available
         && (ui_state == UI_STATE_MAIN)
         && (time_us_64() - time_screen > GUI_SCREEN_IMAGE_TIMEOUT_US)) {
             ui_state = UI_STATE_GAME_IMG;

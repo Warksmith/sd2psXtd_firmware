@@ -9,6 +9,8 @@
 
 extern spin_lock_t *ps2_dirty_spin_lock;
 extern volatile uint32_t ps2_dirty_lockout;
+/* Bumped on every console write; lets folder-card sync detect writes during a scan. */
+extern volatile uint32_t ps2_dirty_generation;
 
 static inline void __time_critical_func(ps2_dirty_lock)(void) {
     spin_lock_unsafe_blocking(ps2_dirty_spin_lock);
@@ -29,6 +31,7 @@ static inline int __time_critical_func(ps2_dirty_lockout_expired)(void) {
 
 void ps2_dirty_init(void);
 int ps2_dirty_get_marked(void);
+int ps2_dirty_pending(void);
 void ps2_dirty_mark(uint32_t sector);
 void ps2_dirty_task(void);
 

@@ -134,6 +134,14 @@ void ps2_mmceman_task(void) {
         ps2_memory_card_exit();
         log(LOG_TRACE, "%s After Exit\n", __func__);
         ps2_mc_data_interface_flush();
+        if (!ps2_cardman_prepare_close()) {
+            /* Unsaved folder card data only lives in PSRAM, so the old card stays. */
+            log(LOG_ERROR, "%s Card switch deferred, card has unsaved data\n", __func__);
+            ps2_history_tracker_card_changed();
+            ps2_memory_card_enter();
+            mmceman_switching_timeout = time_us_64() + (5000 * 1000);
+            return;
+        }
         ps2_cardman_close();
         log(LOG_TRACE, "%s After Close\n", __func__);
 

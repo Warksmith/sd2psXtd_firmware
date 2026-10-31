@@ -315,8 +315,12 @@ static char* ini_reader_sd(char* str, int num, void* fd)
         return NULL;
 
     while (num > 1) {
-        if (sd_read((int)fd, &c, 1) != 1)
-            return NULL;
+        if (sd_read((int)fd, &c, 1) != 1) {
+            /* A last line without a newline is still a line */
+            if (strp == str)
+                return NULL;
+            break;
+        }
         *strp++ = c;
         if (c == '\n')
             break;

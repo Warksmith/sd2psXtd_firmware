@@ -21,6 +21,9 @@
 #include <stdint.h>
 #include <stdio.h>
 
+static volatile uint32_t first_poll_us;
+static volatile uint32_t ignored_polls;
+
 #if LOG_LEVEL_PS2_MC == 0
 #define log(x...)
 #else
@@ -231,13 +234,17 @@ static void __time_critical_func(mc_main_loop)(void) {
 
 
         if (cmd == PS2_SIO2_CMD_IDENTIFIER) {
+            if (first_poll_us == 0)
+                first_poll_us = time_us_32();
+
             //Don't respond to mcman after a card switch to trigger its internal reset
             if (mmceman_mcman_retry_counter > 0) {
                 log(LOG_WARN, "Ignoring mcman for another %i requests\n", mmceman_mcman_retry_counter);
                 mmceman_mcman_retry_counter--;
                 continue;
-            } else if (!ps2_cardman_is_accessible() && (ps2_cardman_get_state() == PS2_CM_STATE_GAMEID)) {
-                /* game id card is not yet accessible */
+            } else if (ps2_cardman_hidden_from_console()) {
+                /* game id or folder card is not yet accessible */
+                ignored_polls++;
                 continue;
             }
 
@@ -449,6 +456,11 @@ void ps2_memory_card_unload(void) {
     log(LOG_TRACE, "Unclaimed %u, %u!\n", cmd_reader.sm, dat_writer.sm);
 
 
+}
+
+void ps2_memory_card_polls(uint32_t *first_ms, uint32_t *ignored) {
+    *first_ms = first_poll_us / 1000U;
+    *ignored = ignored_polls;
 }
 
 bool ps2_memory_card_running(void) {

@@ -10,6 +10,7 @@ add_library(ps2_card STATIC
                 ${CMAKE_CURRENT_SOURCE_DIR}/card_emu/ps2_mc_data_interface.c
                 ${CMAKE_CURRENT_SOURCE_DIR}/history_tracker/ps2_history_tracker.c
 
+                ${CMAKE_CURRENT_SOURCE_DIR}/ps2_card_format.c
                 ${CMAKE_CURRENT_SOURCE_DIR}/ps2_cardman.c
             )
 
@@ -35,7 +36,16 @@ if (SD2PSX_WITH_PSRAM)
     target_link_libraries(ps2_card PRIVATE
             psram)
     target_sources(ps2_card PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/ps2_dirty.c)
+        ${CMAKE_CURRENT_SOURCE_DIR}/ps2_dirty.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/ps2_folder_card.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/ps2_folder_fill.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/ps2_folder_fs.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/ps2_folder_import.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/ps2_folder_meta.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/ps2_folder_name.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/ps2_folder_port_pico.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/ps2_folder_snapshot.c
+        ${CMAKE_CURRENT_SOURCE_DIR}/ps2_folder_sync.c)
     pico_generate_pio_header(ps2_card ${CMAKE_CURRENT_LIST_DIR}/../psram/qspi.pio)
 endif()
 

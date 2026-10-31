@@ -7,6 +7,7 @@
 #include <string.h>
 
 #include "card_emu/ps2_mc_data_interface.h"
+#include "ps2_card_format.h"
 #include "mmceman/ps2_mmceman.h"
 #include "debug.h"
 #include "game_db/game_db.h"
@@ -16,6 +17,7 @@
 #include "pico/platform.h"
 #if WITH_PSRAM
     #include "ps2_dirty.h"
+    #include "ps2_folder_card.h"
     #include "psram/psram.h"
 #endif
 #include "sd.h"
@@ -72,7 +74,10 @@ static uint32_t cardprog_pos;
 
 static ps2_cardman_state_t cardman_state;
 
-static enum { CARDMAN_CREATE, CARDMAN_OPEN, CARDMAN_IDLE, CARDMAN_UNKNOWN } cardman_operation = CARDMAN_UNKNOWN;
+static enum { CARDMAN_CREATE, CARDMAN_OPEN, CARDMAN_FOLDER_LOAD, CARDMAN_FOLDER_FILL, CARDMAN_IDLE, CARDMAN_UNKNOWN } cardman_operation = CARDMAN_UNKNOWN;
+
+/* Until a folder card's directories exist, there is nothing to serve on demand. */
+static volatile bool folder_hidden;
 
 static bool try_set_boot_card() {
     if (!settings_get_ps2_autoboot())
@@ -189,8 +194,20 @@ void ps2_cardman_mark_sector_available(int sector) {
 #endif
 }
 
+void ps2_cardman_forget_sectors(void) {
+#if WITH_PSRAM
+    memset(available_sectors, 0, sizeof(available_sectors));
+#endif
+}
+
 void ps2_cardman_set_priority_sector(int sector) {
     priority_sector = sector;
+}
+
+int ps2_cardman_get_priority_sector(void) {
+    int sector = priority_sector;
+
+    return (sector != -1 && !ps2_cardman_is_sector_available(sector)) ? sector : -1;
 }
 
 void ps2_cardman_flush(void) {
@@ -228,178 +245,6 @@ static void ensuredirs(void) {
 }
 
 
-static void wr32(uint8_t *p, uint32_t v) {
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-    p[2] = (uint8_t)(v >> 16);
-    p[3] = (uint8_t)(v >> 24);
-}
-
-static void wr16(uint8_t *p, uint16_t v) {
-    p[0] = (uint8_t)v;
-    p[1] = (uint8_t)(v >> 8);
-}
-
-
-#define CARD_CLUSTER_SIZE       (1024)
-#define CARD_CLUSTERS_PER_BLOCK (8)
-#define CARD_RESERVED_CLUSTERS  (16)
-
-#define CARD_OFFS_SUPERBLOCK (0)
-#define CARD_OFFS_IND_FAT_0  (0x4000)
-#define CARD_OFFS_IND_FAT_1  (0x4200)
-#define CARD_OFFS_IND_FAT_2  (0x4400)
-#define CARD_OFFS_IND_FAT_3  (0x4600)
-#define CARD_OFFS_IND_FAT(X) (0x4000 + (X) * 0x400)
-#define CARD_OFFS_FAT_NORMAL (0x4400)
-#define CARD_OFFS_FAT(X)     (CARD_OFFS_IND_FAT(X))
-#define CARD_OFFS_FAT_BIG    (0x4800)
-
-#define CARD_SIZE_MB         (card_size / (1024 * 1024))
-#define CARD_CLUST_CNT       (card_size / CARD_CLUSTER_SIZE)
-#define CARD_FAT_LENGTH_PAD  (CARD_CLUST_CNT * 4)
-#define CARD_IND_FAT_SIZE    (CARD_SIZE_MB * 16)
-#define CARD_FAT_LENGTH      ((CARD_CLUST_CNT * 4 + 1023) / 1024)
-#define CARD_IFC_LENGTH      ((CARD_FAT_LENGTH * 4 + 1023) / 1024)
-#define CARD_ALLOC_START     (CARD_RESERVED_CLUSTERS + CARD_IFC_LENGTH + CARD_FAT_LENGTH)
-#define CARD_BACKUP_BLOCK1   ((CARD_CLUST_CNT / CARD_CLUSTERS_PER_BLOCK) - 1)
-#define CARD_BACKUP_BLOCK2   (CARD_BACKUP_BLOCK1 - 1)
-#define CARD_ALLOC_END       ((CARD_BACKUP_BLOCK2 * CARD_CLUSTERS_PER_BLOCK) - CARD_ALLOC_START)
-
-static void build_superblock(uint8_t *buf) {
-    static const char magic[] = "Sony PS2 Memory Card Format ";
-    static const char version[12] = "1.2.0.0";
-
-    memset(buf, 0xFF, PS2_PAGE_SIZE);
-    memset(buf, 0x00, 0xD0);
-
-    memcpy(&buf[0x000], magic, sizeof(magic) - 1);
-    memcpy(&buf[0x01C], version, sizeof(version));
-    wr16(&buf[0x028], PS2_PAGE_SIZE);                 // Page size
-    wr16(&buf[0x02A], 2);                             // Pages per cluster
-    wr16(&buf[0x02C], 16);                            // Pages per erase block
-    wr16(&buf[0x02E], 0xFF00);                        // Unused
-    wr32(&buf[0x030], (uint32_t)CARD_CLUST_CNT);      // Total clusters
-    wr32(&buf[0x034], (uint32_t)CARD_ALLOC_START);    // Alloc offset
-    wr32(&buf[0x038], (uint32_t)CARD_ALLOC_END);      // Alloc end
-    wr32(&buf[0x03C], 0);                             // Root dir cluster
-    wr32(&buf[0x040], (uint32_t)CARD_BACKUP_BLOCK1);  // Backup block 1
-    wr32(&buf[0x044], (uint32_t)CARD_BACKUP_BLOCK2);  // Backup block 2
-
-    for (int i = 0; i < CARD_IFC_LENGTH; i++) {
-        wr32(&buf[0x050 + i * 4], (uint32_t)(CARD_RESERVED_CLUSTERS + i));
-    }
-
-    memset(&buf[0x150], 0x00, 0x2C);
-    buf[0x150] = 0x02;                                // Card type
-    buf[0x151] = 0x2B;                                // Card features
-    wr32(&buf[0x154], CARD_CLUSTER_SIZE);             // Cluster size
-    wr32(&buf[0x158], 256);                           // FAT entries per cluster
-    wr32(&buf[0x15C], CARD_CLUSTERS_PER_BLOCK);       // Clusters per block
-    wr32(&buf[0x160], 0xFFFFFFFFu);                   // Card form
-    // Note: for whatever weird reason, the max alloc cluster cnt needs to be calculated this way.
-    wr32(&buf[0x170], (uint32_t)(((CARD_CLUST_CNT / 1000) * 1000) + 1));
-}
-
-uint8_t blockRoot[1024] = {
-    0x27, 0x84, 0x00, 0x00, 0x02, 0x00, 0x00, 0x00, 0x00, 0x29, 0x00, 0x06, 0x0C, 0x01, 0xD0, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x29,
-    0x00, 0x06, 0x0C, 0x01, 0xD0, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x2E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x26, 0xA4, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x29, 0x00, 0x06, 0x0C, 0x01, 0xD0, 0x07, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x29, 0x00, 0x06, 0x0C, 0x01, 0xD0, 0x07, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x2E, 0x2E, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-
-static void genblock(size_t pos, void *vbuf) {
-    uint8_t *buf = vbuf;
-
-    uint8_t ind_cnt = 1;
-
-#define CURR_BLOCK           (pos / PS2_PAGE_SIZE)
-
-    ind_cnt = CARD_IFC_LENGTH;
-
-    memset(buf, 0xFF, PS2_PAGE_SIZE);
-
-    //printf("pos: %zu, CURR_BLOCK: %d, ind_cnt: %d\n", pos, CURR_BLOCK, ind_cnt);
-
-    if (pos == CARD_OFFS_SUPERBLOCK) {  // Superblock
-        build_superblock(buf);
-
-
-    } else if ((pos >= CARD_OFFS_IND_FAT_0) && (pos < (size_t)CARD_OFFS_IND_FAT(ind_cnt))) {
-
-        // Indirect FAT: IFC entry j stores absolute cluster of FAT cluster j,
-        // which is (reserved_clusters + ifc_length + j). Each IFC page holds 128 entries.
-        uint32_t page_in_ifc = (uint32_t)((pos - CARD_OFFS_IND_FAT_0) / PS2_PAGE_SIZE);
-        uint32_t base_j       = page_in_ifc * 128;
-        uint32_t first_fat_cl = (uint32_t)(CARD_RESERVED_CLUSTERS + ind_cnt);
-        int32_t  n            = (int32_t)CARD_FAT_LENGTH - (int32_t)base_j;
-        if (n > 128) n = 128;
-        if (n < 0)   n = 0;
-        for (int k = 0; k < n; k++) {
-            wr32(&buf[k * 4], first_fat_cl + base_j + (uint32_t)k);
-        }
-    } else if (pos >= (size_t)CARD_OFFS_FAT(ind_cnt) &&
-               pos <  (size_t)CARD_OFFS_FAT(ind_cnt) + (size_t)CARD_FAT_LENGTH * 1024) {
-        // FAT region: pages of 128 uint32 entries each, indexed by relative cluster.
-        //   rel == 0                    -> 0xFFFFFFFF  (root dir end-of-chain)
-        //   1 <= rel < alloc_end        -> 0x7FFFFFFF  (free)
-        //   rel >= alloc_end            -> leave 0xFFFFFFFF (reserved/out-of-range)
-        const uint32_t free_val = 0x7FFFFFFFu;
-        const uint32_t end_val  = 0xFFFFFFFFu;
-        uint32_t page_in_fat = (uint32_t)((pos - (size_t)CARD_OFFS_FAT(ind_cnt)) / PS2_PAGE_SIZE);
-        uint32_t base_entry  = page_in_fat * 128;
-        for (uint32_t k = 0; k < 128; k++) {
-            uint32_t rel = base_entry + k;
-            if (rel == 0) {
-                wr32(&buf[k * 4], end_val);
-            } else if (rel < (uint32_t)CARD_ALLOC_END) {
-                wr32(&buf[k * 4], free_val);
-            }
-            // else: leave memset 0xFFFFFFFF
-        }
-
-    } else if (pos == (CARD_ALLOC_START * CARD_CLUSTER_SIZE)) {
-        memcpy(buf, blockRoot, PS2_PAGE_SIZE);
-    } else if (pos == (CARD_ALLOC_START * CARD_CLUSTER_SIZE) + PS2_PAGE_SIZE) {
-        memcpy(buf, &blockRoot[PS2_PAGE_SIZE], PS2_PAGE_SIZE);
-    }
-}
-
 static int next_sector_to_load() {
     if (priority_sector != -1) {
         if (ps2_cardman_is_sector_available(priority_sector))
@@ -418,7 +263,74 @@ static int next_sector_to_load() {
     return -1;
 }
 
+#if WITH_PSRAM
+/* The snapshot being served cannot be trusted any more: the console has to be told it
+ * has a different card, and that card has to be built from the folder. */
+static void ps2_cardman_folder_remount(void) {
+    folder_hidden = true;
+    cardman_fd = -1;
+    current_read_sector = 0;
+    priority_sector = -1;
+    cardprog_pos = 0;
+    cardman_operation = CARDMAN_FOLDER_LOAD;
+    ps2_mc_data_interface_card_changed();
+}
+
+static void ps2_cardman_continue_folder_load(void) {
+    switch (ps2_folder_card_status()) {
+        case PS2_FOLDER_LOADING:
+            cardprog_pos = (uint32_t)ps2_folder_card_progress() * (card_size / 100U);
+            if (cardman_cb)
+                cardman_cb(ps2_folder_card_progress(), false);
+            return;
+        case PS2_FOLDER_ERROR:
+            log(LOG_ERROR, "Folder card unavailable: %s\n", ps2_folder_card_error_text());
+            /* Core 1 may be waiting for a sector that will never be loaded. */
+            ps2_dirty_lock();
+            memset(available_sectors, 0xFF, sizeof(available_sectors));
+            ps2_dirty_unlock();
+            break;
+        default:
+            folder_hidden = false;
+            if (ps2_folder_card_filling()) {
+                cardprog_pos = 0;
+                cardman_operation = CARDMAN_FOLDER_FILL;
+                return;
+            }
+            break;
+    }
+
+    cardman_operation = CARDMAN_IDLE;
+    if (cardman_cb)
+        cardman_cb(100, true);
+}
+
+/* Not idle, because whatever reads the card on core 0 would wait for itself. */
+static void ps2_cardman_continue_folder_fill(void) {
+    if (ps2_folder_card_filling()) {
+        if (cardman_cb)
+            cardman_cb(ps2_folder_card_progress(), false);
+        return;
+    }
+
+    cardman_operation = CARDMAN_IDLE;
+    if (cardman_cb)
+        cardman_cb(100, true);
+}
+#endif
+
 static void ps2_cardman_continue(void) {
+#if WITH_PSRAM
+    if (cardman_operation == CARDMAN_FOLDER_LOAD) {
+        ps2_cardman_continue_folder_load();
+        return;
+    }
+    if (cardman_operation == CARDMAN_FOLDER_FILL) {
+        ps2_cardman_continue_folder_fill();
+        return;
+    }
+#endif
+
     if (cardman_operation == CARDMAN_OPEN) {
         uint64_t slice_start = time_us_64();
 
@@ -440,6 +352,10 @@ static void ps2_cardman_continue(void) {
                 if (sector_idx == -1) {
                     ps2_dirty_unlock();
                     cardman_operation = CARDMAN_IDLE;
+                    if (ps2_folder_card_active()) {
+                        cardman_fd = -1;
+                        ps2_folder_card_snapshot_loaded();
+                    }
                     uint64_t end = time_us_64();
                     log(LOG_INFO, "took = %.2f s; SD read speed = %.2f kB/s\n", (end - cardprog_start) / 1e6,
                         1000000.0 * card_size / (end - cardprog_start) / 1024);
@@ -449,10 +365,20 @@ static void ps2_cardman_continue(void) {
                 }
 
                 size_t pos = sector_idx * BLOCK_SIZE;
-                if (sd_seek(cardman_fd, pos, 0) != 0)
+                bool seek_ok = sd_seek(cardman_fd, pos, 0) == 0;
+                bool read_ok = seek_ok && sd_read(cardman_fd, flushbuf, BLOCK_SIZE) == BLOCK_SIZE;
+
+                if (!read_ok && ps2_folder_card_active()) {
+                    ps2_dirty_unlock();
+                    ps2_folder_card_snapshot_failed();
+                    ps2_cardman_folder_remount();
+                    return;
+                }
+
+                if (!seek_ok)
                     fatal(ERR_CARDMAN, "cannot read memcard\nseek");
 
-                if (sd_read(cardman_fd, flushbuf, BLOCK_SIZE) != BLOCK_SIZE)
+                if (!read_ok)
                     fatal(ERR_CARDMAN, "cannot read memcard\nread %u", pos);
 
                 log(LOG_TRACE, "Writing pos %u\n", pos);
@@ -495,7 +421,7 @@ static void ps2_cardman_continue(void) {
                 break;
             }
             if (ps2_mc_data_interface_get_sdmode()) {
-                genblock(cardprog_pos, flushbuf);
+                ps2_card_format_page(card_size, cardprog_pos, flushbuf);
                 sd_write(cardman_fd, flushbuf, BLOCK_SIZE);
             } else {
 #if WITH_PSRAM
@@ -549,7 +475,7 @@ static void ps2_cardman_initializePSRAMCard(void) {
         // quickly generate and write an empty card into PSRAM so that it's immediately available, takes about ~0.6s
     for (size_t pos = 0; pos < card_size; pos += BLOCK_SIZE) {
         if (card_size == PS2_CARD_SIZE_8M)
-            genblock(pos, flushbuf);
+            ps2_card_format_page(card_size, pos, flushbuf);
         else
             memset(flushbuf, 0xFF, BLOCK_SIZE);
 
@@ -636,6 +562,70 @@ static void ps2_cardman_move_card_crp(char* path) {
     log(LOG_ERROR, "Card %d Chann %d has invalid size and was renamed to %s\n", card_idx, card_chan, crp_path);
 }
 
+#if WITH_PSRAM
+static void ps2_cardman_open_folder(void) {
+    const char *base = (cardman_state == PS2_CM_STATE_BOOT) ? "BootCard" : folder_name;
+    uint8_t configured_size = card_config_get_ps2_cardsize(folder_name, base);
+    char path[MAX_PATH_LENGTH];
+
+    folder_hidden = true;
+    card_size = PS2_CARD_SIZE_8M;
+    sector_count = card_size / BLOCK_SIZE;
+    cardprog_pos = 0;
+    cardprog_start = time_us_64();
+    cardman_operation = CARDMAN_FOLDER_LOAD;
+    ps2_mc_data_interface_set_sdmode(false);
+    ps2_mc_data_interface_card_changed();
+
+    if (cardman_cb)
+        cardman_cb(0, false);
+
+    if (configured_size != 0 && configured_size != 8) {
+        log(LOG_ERROR, "Folder cards are always 8 MB, CardSize=%u refused\n", configured_size);
+        ps2_folder_card_reject();
+        return;
+    }
+
+    snprintf(path, sizeof(path), "%s/%s/%s-%d.folder", cardhome, folder_name, base, card_chan);
+    log(LOG_INFO, "Switching to folder card path = %s\n", path);
+    ps2_folder_card_open(path, card_config_get_ps2_folder_snapshot(folder_name, base));
+
+    /* Same as opening an image from here on: what is not in PSRAM yet is read on demand. */
+    int fd = ps2_folder_card_snapshot_open();
+    if (fd >= 0) {
+        ps2_dirty_lock();
+        memset(available_sectors, 0, sizeof(available_sectors));
+        ps2_dirty_unlock();
+        cardman_fd = fd;
+        current_read_sector = 0;
+        priority_sector = -1;
+        cardman_sectors_done = 0;
+        cardman_operation = CARDMAN_OPEN;
+        folder_hidden = false;
+        return;
+    }
+
+    /* The task does not run until the GUI is up, which is a long time at power-on. */
+    ps2_folder_card_build();
+    ps2_cardman_continue_folder_load();
+}
+
+/* Writes made while a card loads cannot be saved from a half-filled PSRAM, and stay
+ * queued because the dirty task waits for the load. */
+static bool ps2_cardman_finish_folder_load(void) {
+    if (cardman_operation != CARDMAN_OPEN && cardman_operation != CARDMAN_FOLDER_FILL)
+        return true;
+    while (cardman_operation == CARDMAN_OPEN || cardman_operation == CARDMAN_FOLDER_FILL) {
+        if (!ps2_mmceman_fs_idle())
+            return false;
+        ps2_cardman_task();
+    }
+    ps2_dirty_activity = 1;
+    ps2_mc_data_interface_flush();
+    return true;
+}
+#endif
+
 void ps2_cardman_open(void) {
     char path[MAX_PATH_LENGTH];
 
@@ -644,6 +634,16 @@ void ps2_cardman_open(void) {
     ensuredirs();
 
     ps2_cardman_resolveCardPath(path);
+
+    if (card_config_get_ps2_folder_backend(folder_name, (cardman_state == PS2_CM_STATE_BOOT) ? "BootCard" : folder_name, path,
+                                           cardman_state == PS2_CM_STATE_BOOT)) {
+#if WITH_PSRAM
+        ps2_cardman_open_folder();
+        return;
+#else
+        log(LOG_ERROR, "StorageBackend=FOLDER needs PSRAM, using the image instead\n");
+#endif
+    }
 
     log(LOG_INFO, "Switching to card path = %s\n", path);
 
@@ -687,7 +687,49 @@ void ps2_cardman_open(void) {
     log(LOG_INFO, "Open Finished!\n");
 }
 
+bool ps2_cardman_prepare_close(void) {
+#if WITH_PSRAM
+    if (ps2_folder_card_active()) {
+        if (ps2_folder_card_status() == PS2_FOLDER_DIRTY && !ps2_cardman_finish_folder_load())
+            return false;
+        return ps2_folder_card_flush();
+    }
+#endif
+    return true;
+}
+
+bool ps2_cardman_can_unload(void) {
+#if WITH_PSRAM
+    if (ps2_folder_card_active()) {
+        ps2_folder_status_t status = ps2_folder_card_status();
+        /* Nothing is lost by dropping a snapshot: it is only a shortcut for the next mount. */
+        return status == PS2_FOLDER_CLEAN || status == PS2_FOLDER_ERROR || status == PS2_FOLDER_CACHING
+               || status == PS2_FOLDER_VERIFYING || status == PS2_FOLDER_FILLING;
+    }
+#endif
+    return true;
+}
+
 void ps2_cardman_close(void) {
+#if WITH_PSRAM
+    if (ps2_folder_card_active()) {
+        folder_hidden = true;
+        if (ps2_folder_card_status() == PS2_FOLDER_DIRTY)
+            ps2_cardman_finish_folder_load();
+        if (!ps2_folder_card_flush())
+            log(LOG_ERROR, "Closing folder card with unsaved data\n");
+        ps2_folder_card_close();
+        if (cardman_operation == CARDMAN_OPEN || cardman_operation == CARDMAN_FOLDER_FILL)
+            cardman_operation = CARDMAN_IDLE;
+        cardman_fd = -1;
+        current_read_sector = 0;
+        priority_sector = -1;
+        memset(available_sectors, 0, sizeof(available_sectors));
+        folder_hidden = false;
+        return;
+    }
+#endif
+
     if (cardman_fd < 0)
         return;
     ps2_cardman_flush();
@@ -841,7 +883,16 @@ void ps2_cardman_set_progress_cb(cardman_cb_t func) {
 char *ps2_cardman_get_progress_text(void) {
     static char progress[32];
 
-    if (cardman_operation != CARDMAN_IDLE)
+    /* The display fits 16 characters here. */
+    if (cardman_operation == CARDMAN_FOLDER_LOAD)
+        snprintf(progress, sizeof(progress), "Loading folder..");
+    else if (cardman_operation == CARDMAN_FOLDER_FILL)
+        snprintf(progress, sizeof(progress), "Reading files...");
+#if WITH_PSRAM
+    else if (cardman_operation == CARDMAN_OPEN && ps2_folder_card_active())
+        snprintf(progress, sizeof(progress), "Snap %.0f kB/s", 1000000.0 * cardprog_pos / (time_us_64() - cardprog_start) / 1024);
+#endif
+    else if (cardman_operation != CARDMAN_IDLE)
         snprintf(progress, sizeof(progress), "%s %.2f kB/s", cardman_operation == CARDMAN_CREATE ? "Wr" : "Rd",
                  1000000.0 * cardprog_pos / (time_us_64() - cardprog_start) / 1024);
     else
@@ -891,12 +942,51 @@ bool __time_critical_func(ps2_cardman_is_accessible)(void) {
     // SD: / IDLE   => X
     // SD: / CREATE => X
     // SD: / OPEN   => X
-    if (cardman_operation == CARDMAN_UNKNOWN)
+    if (folder_hidden || cardman_operation == CARDMAN_UNKNOWN)
         return false;
     else if (ps2_mc_data_interface_get_sdmode())
         return (cardman_operation != CARDMAN_CREATE);
     else
         return true;
+}
+
+bool __time_critical_func(ps2_cardman_hidden_from_console)(void) {
+    return folder_hidden || (!ps2_cardman_is_accessible() && (cardman_state == PS2_CM_STATE_GAMEID));
+}
+
+const char *ps2_cardman_get_storage_status(void) {
+#if WITH_PSRAM
+    switch (ps2_folder_card_status()) {
+        case PS2_FOLDER_LOADING: return "Loading card...";
+        case PS2_FOLDER_FILLING: return "Reading files...";
+        case PS2_FOLDER_VERIFYING: return "Checking card...";
+        case PS2_FOLDER_CACHING: return "Caching card...";
+        case PS2_FOLDER_DIRTY: return "Unsaved changes";
+        case PS2_FOLDER_SYNCING: return "Saving card...";
+        case PS2_FOLDER_SYNC_FAILED: return "Save failed!";
+        case PS2_FOLDER_ERROR: return ps2_folder_card_error_text();
+        default: break;
+    }
+#endif
+    return NULL;
+}
+
+bool ps2_cardman_owns_fd(int fd) {
+#if WITH_PSRAM
+    return ps2_folder_card_owns_fd(fd);
+#else
+    (void)fd;
+    return false;
+#endif
+}
+
+bool ps2_cardman_path_protected(const char *path) {
+#if WITH_PSRAM
+    return ps2_folder_card_path_protected(path);
+#else
+    (void)path;
+    return false;
+#endif
 }
 
 bool ps2_cardman_is_idle(void) {
@@ -912,5 +1002,10 @@ void ps2_cardman_init(void) {
 }
 
 void ps2_cardman_task(void) {
+#if WITH_PSRAM
+    ps2_folder_card_task();
+    if (ps2_folder_card_take_remount())
+        ps2_cardman_folder_remount();
+#endif
     ps2_cardman_continue();
 }
