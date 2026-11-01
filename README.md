@@ -13,18 +13,22 @@ sd2psXtd is an extended firmware for the popular *Multipurpose MemoryCard Emulat
 
 <img width="383" height="452" alt="image" src="https://github.com/user-attachments/assets/31e6a75b-fc50-46e2-8375-3c577bee93d1" />
 
-On devices with PSRAM, an 8 MB PS2 card can keep its saves as ordinary files in a folder instead of a `.mcd` image. It works with launchers that support GameID and In Game Reset (IGR), including switching back to the FMCB card when IGR is initiated.
 
-The console sees a normal formatted card, and changes are written back to the files in the background. Enable it per card by adding this to the section of an individual card's ini file.
+On devices with PSRAM (PSxMemCard Gen2), an 8 MB PS2 card can keep its saves as ordinary files in a folder instead of a `.mcd` image. It works with launchers that support GameID and In Game Reset (IGR), including switching back to the FMCB card when IGR is initiated.
 
+The console sees a normal formatted card, and changes are written back to the files in the background.
+
+#### Settings to enable folder mode
+
+**Per memory card:** `F:\MemoryCards\PS2\SLUS-12345\SLUS-12345.ini`
 ```
 [Settings]
 StorageBackend=FOLDER
 
 ```
-Add `FolderSnapshot=ON` to keep an 8 MB copy on the SD card, so the card is available immediately when nothing has changed. This is the better-tested option for boot cards.
+If you cant get a game to work, or have trouble booting FMCB in folder mode, you can also add `FolderSnapshot=ON` to keep an 8 MB copy on the SD card. When the console requests a card read it'll serve up the snapshot first, then continue using the filesystem on the backend.
 
-Set the following within `.sd2psx/settings.ini` to create new cards as folder cards, including those Game ID creates.
+**Global:** Set the following within `F:\.sd2psx/settings.ini` to create new cards as folder cards, including those created automatically via GameID.
 ```
 [PS2]
 NewCardBackend=FOLDER
@@ -32,9 +36,7 @@ NewCardBackend=FOLDER
 ```
 
 
-A folder card appears once its directories are built, and its files are read behind it with whatever the console asks for going first. That can still be too late for a boot card. Adding `FolderSnapshot=ON` keeps an 8 MB copy on the SD card so the card is available immediately when nothing has changed, at the cost of the extra space and SD writes.
-
-This has not been extensively tested on hardware yet, and saves that have not reached the SD card are lost in a power cut. See [doc/folder-cards.md](doc/folder-cards.md) before using it.
+This has not been *extensively tested* on hardware yet, and saves that have not reached the SD card are lost in a power cut. See [doc/folder-cards.md](doc/folder-cards.md) before using it.
 
 ## General: USB Storage Mode
 
@@ -48,11 +50,13 @@ Hold a button while connecting the device to a computer over USB to choose how i
 | Button 1 | The microSD card appears on the computer as a removable drive |
 | Button 2 | Firmware update mode. If both buttons are held, this one wins |
 
-Firmware update mode used to start from either button. The dedicated BOOTSEL button on the board still works as before.
+(Previously the firmware update mode would start from either button 1 or 2. The dedicated BOOTSEL button on the board still works as before.)
 
-USB storage mode gives the computer the whole card, and the firmware does not read or write its filesystem, so memory card emulation does not run. Connect only USB (Do not connect to the PS2 at the same time). Eject the drive on the computer before unplugging so that the computer finishes its own cached writes. 
+USB storage mode gives the computer the whole card, while plugged in via USB the memory card emulation feature does not run. 
 
-USB on the RP2040 is limited to 12 Mbit/s, so expect under 1 MB/s. It's meant for saves and settings. If you're transferring ISOs or other large files use a microSD card reader.
+**Connect only USB (Do not connect to the PS2 at the same time). Eject the drive on the computer before unplugging so that the computer finishes its own cached writes.**
+
+USB on the RP2040 is limited to 12 Mbit/s, so expect under 1 MB/s. It's meant for saves and settings. If you're transferring ISOs or other large files use a microSD card reader. That said, if its slow to mount you can try formatting with 64K clusters and it should mount faster.
 
 # sd2psXtd features, continued
 
