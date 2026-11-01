@@ -62,6 +62,15 @@ target_compile_definitions(
     CFG_TUD_MSC_EP_BUFSIZE=16384
 )
 
+# the name a computer shows for the device, in place of the SDK's "Pico"
+if (VARIANT STREQUAL "SD2PSX")
+    target_compile_definitions(
+        ${TARGET_NAME} PUBLIC
+        USBD_MANUFACTURER="BitFunX"
+        USBD_PRODUCT="PSxMemCard-Gen2"
+    )
+endif()
+
 # USB storage mode swaps these out at runtime, see src/usb_storage.c
 target_link_options(${TARGET_NAME} PRIVATE
     "LINKER:--wrap=tud_descriptor_device_cb"

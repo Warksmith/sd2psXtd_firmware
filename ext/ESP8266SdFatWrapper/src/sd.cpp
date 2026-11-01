@@ -60,6 +60,10 @@ extern "C" bool sd_raw_write(uint32_t sector, const uint8_t *src, size_t count) 
     return sd.card()->writeSectors(sector, src, count);
 }
 
+extern "C" bool sd_raw_sync() {
+    return sd.card()->syncDevice();
+}
+
 extern "C" void sd_init() {
     if (!initialized) {
         sd_pins_init();

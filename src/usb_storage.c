@@ -4,6 +4,7 @@
 #include <stdint.h>
 #include <string.h>
 
+#include "pico/time.h"
 #include "sd.h"
 #include "tusb.h"
 
@@ -31,8 +32,26 @@
 #define STORAGE_STR_PRODUCT 2
 #define STORAGE_STR_SERIAL 3
 
+/* what the drive reports itself as, on a build that names its device in CMakeLists.txt */
+#ifdef USBD_PRODUCT
+#define STORAGE_INQUIRY_VENDOR USBD_MANUFACTURER
+#define STORAGE_INQUIRY_PRODUCT USBD_PRODUCT
+#else
+#define STORAGE_INQUIRY_VENDOR "sd2psXtd"
+#define STORAGE_INQUIRY_PRODUCT "SD Storage"
+#endif
+
 #define SECTOR_SIZE 512
+#define SCSI_CMD_PREVENT_ALLOW_REMOVAL 0x1E
 #define SCSI_CMD_SYNCHRONIZE_CACHE_10 0x35
+
+/* additional sense codes */
+#define SENSE_SYNC_FAILED 0x0C
+#define SENSE_BAD_COMMAND 0x20
+#define SENSE_NO_MEDIUM 0x3A
+
+/* a suspended bus can be a moment's pause */
+#define RELEASE_IDLE_US 2000000U
 
 typedef enum {
     STATUS_NONE,
@@ -64,8 +83,32 @@ static const uint8_t storage_desc_cfg[STORAGE_CFG_LEN] = {
 };
 
 static bool usb_storage_active;
-static volatile bool host_released;
 static uint32_t sector_count;
+
+/* Whether the host is done with the card. Hosts say so in different ways, and some never
+   do: one that has safely removed the drive can just stop talking to it. */
+static struct {
+    bool ejected;       /* told to unload, or unconfigured: the medium stays away */
+    bool stopped;       /* told to stop: the medium stays, if it is asked for */
+    bool suspended;
+    uint64_t suspended_at_us;
+} host;
+
+#if DEBUG_USB_UART
+/* Storage mode replaces the debug console, so in a debug build the display shows which of
+   the host's signals arrived, in case a host releases the card in some other way.
+   L: stop and unload  S: stop  A: allow removal  Y: sync  Z: suspend  U: unconfigured */
+static char host_seen[8];
+
+static void note_host(char event) {
+    size_t len = strlen(host_seen);
+
+    if (!strchr(host_seen, event) && len + 1 < sizeof(host_seen))
+        host_seen[len] = event;
+}
+#else
+#define note_host(event) ((void)0)
+#endif
 
 const uint8_t *__real_tud_descriptor_device_cb(void);
 const uint8_t *__real_tud_descriptor_configuration_cb(uint8_t index);
@@ -99,16 +142,14 @@ static bool request_in_range(uint32_t lba, uint32_t offset, uint32_t bufsize) {
 void tud_msc_inquiry_cb(uint8_t lun, uint8_t vendor_id[8], uint8_t product_id[16], uint8_t product_rev[4]) {
     (void)lun;
 
-    copy_padded(vendor_id, "sd2psXtd", 8);
-    copy_padded(product_id, "SD Storage", 16);
+    copy_padded(vendor_id, STORAGE_INQUIRY_VENDOR, 8);
+    copy_padded(product_id, STORAGE_INQUIRY_PRODUCT, 16);
     copy_padded(product_rev, "1.0", 4);
 }
 
 bool tud_msc_test_unit_ready_cb(uint8_t lun) {
-    (void)lun;
-
-    if (host_released) {
-        tud_msc_set_sense(lun, SCSI_SENSE_NOT_READY, 0x3A, 0x00);
+    if (host.ejected) {
+        tud_msc_set_sense(lun, SCSI_SENSE_NOT_READY, SENSE_NO_MEDIUM, 0x00);
         return false;
     }
     return true;
@@ -122,52 +163,97 @@ void tud_msc_capacity_cb(uint8_t lun, uint32_t *block_count, uint16_t *block_siz
 }
 
 bool tud_msc_start_stop_cb(uint8_t lun, uint8_t power_condition, bool start, bool load_eject) {
-    (void)lun;
-    (void)power_condition;
+    /* a power condition asks for a power state, and start means nothing with it */
+    if (power_condition != 0)
+        return true;
 
+    if (start) {
+        host.ejected = false;
+        host.stopped = false;
+        return true;
+    }
+
+    if (!sd_raw_sync()) {
+        tud_msc_set_sense(lun, SCSI_SENSE_MEDIUM_ERROR, SENSE_SYNC_FAILED, 0x00);
+        return false;
+    }
+    note_host(load_eject ? 'L' : 'S');
+    host.stopped = true;
     if (load_eject)
-        host_released = !start;
+        host.ejected = true;
     return true;
 }
 
 int32_t tud_msc_read10_cb(uint8_t lun, uint32_t lba, uint32_t offset, void *buffer, uint32_t bufsize) {
     (void)lun;
 
-    if (!request_in_range(lba, offset, bufsize) || !sd_raw_read(lba, buffer, bufsize / SECTOR_SIZE))
-        return -1;
-    return (int32_t)bufsize;
+    bool done = !host.ejected && request_in_range(lba, offset, bufsize)
+        && sd_raw_read(lba, buffer, bufsize / SECTOR_SIZE);
+
+    /* reading or writing means the host has not finished, whatever it said before */
+    host.stopped = false;
+    return done ? (int32_t)bufsize : -1;
 }
 
 int32_t tud_msc_write10_cb(uint8_t lun, uint32_t lba, uint32_t offset, uint8_t *buffer, uint32_t bufsize) {
     (void)lun;
 
-    if (!request_in_range(lba, offset, bufsize) || !sd_raw_write(lba, buffer, bufsize / SECTOR_SIZE))
-        return -1;
-    return (int32_t)bufsize;
+    bool done = !host.ejected && request_in_range(lba, offset, bufsize)
+        && sd_raw_write(lba, buffer, bufsize / SECTOR_SIZE);
+
+    host.stopped = false;
+    return done ? (int32_t)bufsize : -1;
 }
 
 int32_t tud_msc_scsi_cb(uint8_t lun, uint8_t const scsi_cmd[16], void *buffer, uint16_t bufsize) {
     (void)buffer;
     (void)bufsize;
 
-    /* writes reach the card before they are acknowledged, so there is no cache to flush */
-    if (scsi_cmd[0] == SCSI_CMD_SYNCHRONIZE_CACHE_10)
-        return 0;
-
-    tud_msc_set_sense(lun, SCSI_SENSE_ILLEGAL_REQUEST, 0x20, 0x00);
-    return -1;
+    switch (scsi_cmd[0]) {
+        case SCSI_CMD_PREVENT_ALLOW_REMOVAL:
+            if (!(scsi_cmd[4] & 1))
+                note_host('A');
+            return 0;
+        case SCSI_CMD_SYNCHRONIZE_CACHE_10:
+            note_host('Y');
+            if (sd_raw_sync())
+                return 0;
+            tud_msc_set_sense(lun, SCSI_SENSE_MEDIUM_ERROR, SENSE_SYNC_FAILED, 0x00);
+            return -1;
+        default:
+            tud_msc_set_sense(lun, SCSI_SENSE_ILLEGAL_REQUEST, SENSE_BAD_COMMAND, 0x00);
+            return -1;
+    }
 }
 
 void tud_mount_cb(void) {
-    host_released = false;
+    memset(&host, 0, sizeof(host));
 }
 
 void tud_umount_cb(void) {
-    host_released = true;
+    note_host('U');
+    host.ejected = true;
+}
+
+void tud_suspend_cb(bool remote_wakeup_en) {
+    (void)remote_wakeup_en;
+
+    note_host('Z');
+    host.suspended = true;
+    host.suspended_at_us = time_us_64();
+}
+
+void tud_resume_cb(void) {
+    host.suspended = false;
+}
+
+static bool host_is_done(void) {
+    return host.ejected || host.stopped
+        || (host.suspended && time_us_64() - host.suspended_at_us >= RELEASE_IDLE_US);
 }
 
 static storage_status_t get_status(void) {
-    if (host_released)
+    if (host_is_done())
         return STATUS_SAFE;
     return tud_mounted() ? STATUS_READY : STATUS_WAITING;
 }
@@ -181,7 +267,11 @@ static void show_status(storage_status_t status) {
     else if (status == STATUS_READY)
         oled_draw_text("Connected\nEject before\nunplugging");
     else
-        oled_draw_text("Safe to unplug");
+        oled_draw_text("Safe to\ndisconnect");
+#if DEBUG_USB_UART
+    oled_draw_text("\n");
+    oled_draw_text(host_seen);
+#endif
     oled_show();
 #else
     (void)status;
@@ -204,6 +294,13 @@ void usb_storage_run(void) {
 
         /* the display blocks while it updates, so only touch it when the text changes */
         storage_status_t status = get_status();
+#if DEBUG_USB_UART
+        static size_t shown_seen;
+        if (strlen(host_seen) != shown_seen) {
+            shown_seen = strlen(host_seen);
+            shown = STATUS_NONE;
+        }
+#endif
         if (status != shown) {
             show_status(status);
             shown = status;

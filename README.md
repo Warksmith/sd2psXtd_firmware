@@ -54,7 +54,7 @@ Hold a button while connecting the device to a computer over USB to choose how i
 
 USB storage mode gives the computer the whole card, while plugged in via USB the memory card emulation feature does not run. 
 
-**Connect only USB (Do not connect to the PS2 at the same time). Eject the drive on the computer before unplugging so that the computer finishes its own cached writes.**
+**Connect only USB (Do not connect to the PS2 at the same time). Eject the drive on the computer before unplugging so that the computer finishes its own cached writes. The display shows `Safe to disconnect` a few seconds after the computer has released it.**
 
 USB on the RP2040 is limited to 12 Mbit/s, so expect under 1 MB/s. It's meant for saves and settings. If you're transferring ISOs or other large files use a microSD card reader. That said, if its slow to mount you can try formatting with 64K clusters and it should mount faster.
 
