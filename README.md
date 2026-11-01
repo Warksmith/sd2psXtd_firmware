@@ -6,14 +6,16 @@
 sd2psXtd is an extended firmware for the popular *Multipurpose MemoryCard Emulator* sd2psx by developer @xyzz (see [here](https://github.com/sd2psx)). It combines cutting-edge extended functionality (like game ID switching, file system access, and dynamic mode selection) with the rock-solid performance of the original sd2psx firmware.
 
 ### [!!] **Quick Note: This fork introduces 2 new features**
-- **PS2:** Folder-Backed Memory Cards **(experimental)**
+- **PS2:** Folder-Backed Memory Cards **(experimental)** (works with "GameID" and "In Game Reset")
 - **General:** USB mass storage mode if Button1 is held while a USB cable is plugged in.
 
 ## PS2: Folder-Backed Memory Cards (experimental)
 
 <img width="383" height="452" alt="image" src="https://github.com/user-attachments/assets/31e6a75b-fc50-46e2-8375-3c577bee93d1" />
 
-On devices with PSRAM, an 8 MB PS2 card can keep its saves as ordinary files in a folder instead of a `.mcd` image. The console sees a normal formatted card, and changes are written back to the files in the background. Enable it per card by adding this to the section of an individual card's ini file.
+On devices with PSRAM, an 8 MB PS2 card can keep its saves as ordinary files in a folder instead of a `.mcd` image. It works with launchers that support GameID and In Game Reset (IGR), including switching back to the FMCB card when IGR is initiated.
+
+The console sees a normal formatted card, and changes are written back to the files in the background. Enable it per card by adding this to the section of an individual card's ini file.
 
 ```
 [Settings]
