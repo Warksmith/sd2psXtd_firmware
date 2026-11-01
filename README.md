@@ -13,7 +13,22 @@ sd2psXtd is an extended firmware for the popular *Multipurpose MemoryCard Emulat
 
 <img width="383" height="452" alt="image" src="https://github.com/user-attachments/assets/31e6a75b-fc50-46e2-8375-3c577bee93d1" />
 
-On devices with PSRAM, an 8 MB PS2 card can keep its saves as ordinary files in a folder instead of a `.mcd` image. The console sees a normal formatted card, and changes are written back to the files in the background. Enable it per card by adding `StorageBackend=FOLDER` to the `[Settings]` section of the card's ini file. Existing images are never touched. To have new cards, including those Game ID creates, start as folder cards, set `NewCardBackend=FOLDER` in the `[PS2]` section of `.sd2psx/settings.ini`.
+On devices with PSRAM, an 8 MB PS2 card can keep its saves as ordinary files in a folder instead of a `.mcd` image. The console sees a normal formatted card, and changes are written back to the files in the background. Enable it per card by adding this to the section of an individual card's ini file.
+
+```
+[Settings]
+StorageBackend=FOLDER
+
+```
+Add `FolderSnapshot=ON` to keep an 8 MB copy on the SD card, so the card is available immediately when nothing has changed. This is the better-tested option for boot cards.
+
+Set the following within `.sd2psx/settings.ini` to create new cards as folder cards, including those Game ID creates.
+```
+[PS2]
+NewCardBackend=FOLDER
+
+```
+
 
 A folder card appears once its directories are built, and its files are read behind it with whatever the console asks for going first. That can still be too late for a boot card. Adding `FolderSnapshot=ON` keeps an 8 MB copy on the SD card so the card is available immediately when nothing has changed, at the cost of the extra space and SD writes.
 
