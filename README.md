@@ -5,6 +5,38 @@
 
 sd2psXtd is an extended firmware for the popular *Multipurpose MemoryCard Emulator* sd2psx by developer @xyzz (see [here](https://github.com/sd2psx)). It combines cutting-edge extended functionality (like game ID switching, file system access, and dynamic mode selection) with the rock-solid performance of the original sd2psx firmware.
 
+**Quick Note: This fork introduces 2 new features**
+- **PS2:** Folder-Backed Memory Cards **(experimental)**
+- **General:** USB mass storage mode if Button1 is held while a USB cable is plugged in.
+
+## PS2: Folder-Backed Memory Cards (experimental)
+
+On devices with PSRAM, an 8 MB PS2 card can keep its saves as ordinary files in a folder instead of a `.mcd` image. The console sees a normal formatted card, and changes are written back to the files in the background. Enable it per card by adding `StorageBackend=FOLDER` to the `[Settings]` section of the card's ini file. Existing images are never touched. To have new cards, including those Game ID creates, start as folder cards, set `NewCardBackend=FOLDER` in the `[PS2]` section of `.sd2psx/settings.ini`.
+
+A folder card appears once its directories are built, and its files are read behind it with whatever the console asks for going first. That can still be too late for a boot card. Adding `FolderSnapshot=ON` keeps an 8 MB copy on the SD card so the card is available immediately when nothing has changed, at the cost of the extra space and SD writes.
+
+This has not been validated on hardware yet, and saves that have not reached the SD card are lost in a power cut. See [doc/folder-cards.md](doc/folder-cards.md) before using it.
+
+## General: USB Storage Mode
+
+Hold a button while connecting the device to a computer over USB to choose how it starts:
+
+| Held while connecting | Result |
+| --- | --- |
+| Nothing | Normal startup |
+| Button 1 | The microSD card appears on the computer as a removable drive |
+| Button 2 | Firmware update mode. If both buttons are held, this one wins |
+
+Firmware update mode used to start from either button. The dedicated BOOTSEL button on the board still works as before.
+
+USB storage mode gives the computer the whole card, and the firmware does not read or write its filesystem, so memory card emulation does not run. Connect only USB (Do not connect to the PS2 at the same time). Eject the drive on the computer before unplugging so that the computer finishes its own cached writes. 
+
+USB on the RP2040 is limited to 12 Mbit/s, so expect under 1 MB/s. It's meant for saves and settings. If you're transferring ISOs or other large files use a microSD card reader.
+
+# sd2psXtd features, continued...
+
+sd2psXtd is an extended firmware for the popular *Multipurpose MemoryCard Emulator* sd2psx by developer @xyzz (see [here](https://github.com/sd2psx)). It combines cutting-edge extended functionality (like game ID switching, file system access, and dynamic mode selection) with the rock-solid performance of the original sd2psx firmware.
+
 It provides the same functionality as the official stable firmware and extends it with the following features:
 
 - **PS2:** Game ID switching
@@ -144,23 +176,6 @@ set variant <retail|proto|conquest|arcade>
 
 `reset bl` resets to the bootloader. `reset dev` restarts the firmware. Card, channel, and game commands affect the currently active mode. Setting a PS2 variant also switches the device to PS2 mode.
 
-## General: USB Storage Mode
-
-Hold a button while connecting the device to a computer over USB to choose how it starts:
-
-| Held while connecting | Result |
-| --- | --- |
-| Nothing | Normal startup |
-| Button 1 | The microSD card appears on the computer as a removable drive |
-| Button 2 | Firmware update mode. If both buttons are held, this one wins |
-
-Firmware update mode used to start from either button. The dedicated BOOTSEL button on the board still works as before.
-
-USB storage mode gives the computer the whole card, and the firmware does not read or write its filesystem, so memory card emulation does not run. Connect only USB, with the device out of the console. Eject the drive on the computer before unplugging, so that the computer finishes its own cached writes. On devices with a display, the screen shows when it is safe to unplug. Unplug and reconnect to return to normal startup.
-
-USB on the RP2040 is limited to 12 Mbit/s, so expect under 1 MB/s. That suits saves and settings. Use a card reader for disc images.
-
-
 ## General: Settings File
 
 *sd2psXtd* generates a settings file (`.sd2psx/settings.ini`) that allows you to edit some settings through your computer. This is useful when using one SD card with multiple *sd2psx* devices or *MMCE* devices without a display to change settings.
@@ -243,14 +258,6 @@ MaxChannels=8
 CardSize=8
 ```
 
-
-## PS2: Folder-Backed Memory Cards (experimental)
-
-On devices with PSRAM, an 8 MB PS2 card can keep its saves as ordinary files in a folder instead of a `.mcd` image. The console sees a normal formatted card, and changes are written back to the files in the background. Enable it per card by adding `StorageBackend=FOLDER` to the `[Settings]` section of the card's ini file. Existing images are never touched. To have new cards, including those Game ID creates, start as folder cards, set `NewCardBackend=FOLDER` in the `[PS2]` section of `.sd2psx/settings.ini`.
-
-A folder card appears once its directories are built, and its files are read behind it with whatever the console asks for going first. That can still be too late for a boot card. Adding `FolderSnapshot=ON` keeps an 8 MB copy on the SD card so the card is available immediately when nothing has changed, at the cost of the extra space and SD writes.
-
-This has not been validated on hardware yet, and saves that have not reached the SD card are lost in a power cut. See [doc/folder-cards.md](doc/folder-cards.md) before using it.
 
 ## General: Game2Folder mapping
 
