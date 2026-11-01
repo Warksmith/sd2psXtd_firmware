@@ -5,7 +5,7 @@
 
 sd2psXtd is an extended firmware for the popular *Multipurpose MemoryCard Emulator* sd2psx by developer @xyzz (see [here](https://github.com/sd2psx)). It combines cutting-edge extended functionality (like game ID switching, file system access, and dynamic mode selection) with the rock-solid performance of the original sd2psx firmware.
 
-**Quick Note: This fork introduces 2 new features**
+===================== **Quick Note: This fork introduces 2 new features** =====================
 - **PS2:** Folder-Backed Memory Cards **(experimental)**
 - **General:** USB mass storage mode if Button1 is held while a USB cable is plugged in.
 
