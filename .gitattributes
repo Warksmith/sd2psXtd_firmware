@@ -1,2 +1,3 @@
 misc/docker/build.sh text eol=lf
+misc/docker/build_release.sh text eol=lf
 test/folder/run.sh text eol=lf

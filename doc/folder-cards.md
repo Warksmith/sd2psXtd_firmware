@@ -1,6 +1,6 @@
 # Folder-backed PS2 memory cards
 
-**Status: experimental. Tested on a host simulator and in first use on a PSXMemCard Gen2, where a card mounted, saves loaded and one game save reached the SD card. A `FolderSnapshot` boot card has also started FreeMcBoot from power-on and passed its content check. A boot card without a snapshot has started FreeMcBoot from a cold boot once, with `.ps2meta` deleted first, after an earlier version failed to. That has not been repeated, and building from `index.bin` has not been confirmed on a console. Power loss and most of the checklist are untested on hardware.**
+**Status: experimental. Tested on a host simulator and in first use on a PSXMemCard Gen2, where a card mounted, saves loaded and one game save reached the SD card. A `FolderSnapshot` boot card has also started FreeMcBoot from power-on and passed its content check. A boot card without a snapshot has started FreeMcBoot from a cold boot. That has not been repeated, and building from `index.bin` has not been confirmed on a console. Power loss and most of the checklist are untested on hardware.**
 Work through the [hardware validation checklist](#hardware-validation-checklist) before trusting it with saves you care about.
 
 A folder card keeps its saves as ordinary files on the SD card instead of inside one `.mcd` image. While the card is mounted, the firmware keeps an 8 MB PS2 filesystem in PSRAM and the console uses it like any other card, with the stock driver and no homebrew or patches. Changes are written back to the files in the background.
@@ -18,6 +18,7 @@ Add this to the card's ini file:
 ```ini
 [Settings]
 StorageBackend=FOLDER
+
 ```
 
 | Card | Ini file | Folder used for channel 1 |
@@ -26,7 +27,7 @@ StorageBackend=FOLDER
 | Boot | `MemoryCards/PS2/BOOT/BootCard.ini` | `MemoryCards/PS2/BOOT/BootCard-1.folder/` |
 | Game ID or named | `MemoryCards/PS2/SLUS-12345/SLUS-12345.ini` | `MemoryCards/PS2/SLUS-12345/SLUS-12345-1.folder/` |
 
-- The ini name must match the table exactly. The boot card reads `BootCard.ini`, not `Boot.ini` or `BootCard-1.ini`. Without `StorageBackend` in a matching ini, what is on the SD card decides, as described under `NewCardBackend` below.
+- The ini name must match the table exactly. The boot card reads `BootCard.ini`, **not** `Boot.ini` or `BootCard-1.ini`. Without `StorageBackend` in a matching ini, what is on the SD card decides, as described under `NewCardBackend` below.
 - The setting applies to every channel of the card, and each channel has its own folder.
 - Accepted values are `IMAGE` (the default) and `FOLDER`, in either case. Unknown values are ignored, as if the line were not there.
 - On a firmware build without PSRAM, `FOLDER` is ignored and the image is used.
@@ -42,6 +43,7 @@ To have cards that do not exist yet start as folder cards, including the ones Ga
 ```ini
 [PS2]
 NewCardBackend=FOLDER
+
 ```
 
 A card with no `StorageBackend` in its ini is then decided per channel, in this order:
@@ -175,9 +177,9 @@ The console itself can exceed the entry and depth limits. If it does, the card k
 ### Things that do not work
 
 - **Cross-linked files**, as used by multi-version FreeMcBoot installs. Two files sharing clusters cannot be turned into separate host files, so the card reports `Card data invalid`, nothing is saved, and card switching is blocked until a power cycle. Use an image card for these.
-- **Booting from the card right after power-on has only been tried repeatedly with `FolderSnapshot=ON`** and a current snapshot. Without one it has worked once and failed once, on different firmware. An 8 MB image card is visible while it loads, which is what lets FreeMcBoot or PS2BBL start at power-on. A folder card without a usable snapshot is hidden until its directories are built, so a console that reads the card earlier finds no card. Check this on your console with your card contents before relying on it.
+- **Booting from the card right after power-on has only been tried repeatedly with `FolderSnapshot=ON`** and a current snapshot. Without one it may fail if you're using a slow microSD card. An 8 MB image card is visible while it loads, which is what lets FreeMcBoot or PS2BBL start at power-on. A folder card without a usable snapshot is hidden until its directories are built, so a console that reads the card earlier finds no card. Check this on your console with your card contents before relying on it.
 - **Renames are expensive.** The console has no rename the firmware can see, so renaming a directory appears as a delete plus a create and rewrites every file in it.
-- **Host names the card cannot represent are refused, not renamed.** `100%.dat` and most non-ASCII names stop the card from mounting. Rename the file on the computer. See [Filename encoding](#filename-encoding).
+- **Host names the card cannot represent are refused, not renamed.** Names like `100%.dat` and most non-ASCII names stop the card from mounting. Rename the file on the computer. See [Filename encoding](#filename-encoding).
 
 ### Recovering a card
 
@@ -468,7 +470,7 @@ docker build -t sd2psx-build misc/docker
 docker run --rm -v "${PWD}:/src" -v sd2psx-build:/build sd2psx-build bash /src/misc/docker/build.sh
 ```
 
-Run both from the repository root. This builds only the PSXMemCard Gen2 firmware: `sd2psx.uf2`, and `sd2psx-debug.uf2` with `[FOLDER]` log lines on USB serial. Both end up in `build/docker/` in the repository, which git ignores. The Docker volume `sd2psx-build` holds only the intermediate files, so later builds are faster. To build another variant, change `VARIANT` and the `cp` line in `misc/docker/build.sh` to match. Other variants name their files differently, for example `psxmemcard.uf2`.
+Run both from the repository root. This builds only the PSXMemCard Gen2 firmware: `sd2psx.uf2`, and `sd2psx-debug.uf2` with `[FOLDER]` log lines on USB serial. Both end up in `build/docker/` in the repository, which git ignores. The Docker volume `sd2psx-build` holds only the intermediate files, so later builds are faster. To build another variant, change `VARIANT` and the `cp` line in `misc/docker/build.sh` to match. Other variants name their files differently, for example `psxmemcard.uf2`. To build one release firmware for every target into `build/release/`, run `misc/docker/build_release.sh` the same way.
 
 The folder engine is compiled only when `SD2PSX_WITH_PSRAM` is set. The build downloads the game database, so it needs network access.
 
