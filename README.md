@@ -5,11 +5,13 @@
 
 sd2psXtd is an extended firmware for the popular *Multipurpose MemoryCard Emulator* sd2psx by developer @xyzz (see [here](https://github.com/sd2psx)). It combines cutting-edge extended functionality (like game ID switching, file system access, and dynamic mode selection) with the rock-solid performance of the original sd2psx firmware.
 
-===================== **Quick Note: This fork introduces 2 new features** =====================
+### [!!] **Quick Note: This fork introduces 2 new features**
 - **PS2:** Folder-Backed Memory Cards **(experimental)**
 - **General:** USB mass storage mode if Button1 is held while a USB cable is plugged in.
 
 ## PS2: Folder-Backed Memory Cards (experimental)
+
+<img width="383" height="452" alt="image" src="https://github.com/user-attachments/assets/31e6a75b-fc50-46e2-8375-3c577bee93d1" />
 
 On devices with PSRAM, an 8 MB PS2 card can keep its saves as ordinary files in a folder instead of a `.mcd` image. The console sees a normal formatted card, and changes are written back to the files in the background. Enable it per card by adding `StorageBackend=FOLDER` to the `[Settings]` section of the card's ini file. Existing images are never touched. To have new cards, including those Game ID creates, start as folder cards, set `NewCardBackend=FOLDER` in the `[PS2]` section of `.sd2psx/settings.ini`.
 
@@ -18,6 +20,8 @@ A folder card appears once its directories are built, and its files are read beh
 This has not been extensively tested on hardware yet, and saves that have not reached the SD card are lost in a power cut. See [doc/folder-cards.md](doc/folder-cards.md) before using it.
 
 ## General: USB Storage Mode
+
+<img width="611" height="517" alt="image" src="https://github.com/user-attachments/assets/c20cf346-c95e-4d40-85de-db28d60d0ad7" />
 
 Hold a button while connecting the device to a computer over USB to choose how it starts:
 
