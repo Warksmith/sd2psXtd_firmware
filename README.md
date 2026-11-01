@@ -15,7 +15,7 @@ On devices with PSRAM, an 8 MB PS2 card can keep its saves as ordinary files in 
 
 A folder card appears once its directories are built, and its files are read behind it with whatever the console asks for going first. That can still be too late for a boot card. Adding `FolderSnapshot=ON` keeps an 8 MB copy on the SD card so the card is available immediately when nothing has changed, at the cost of the extra space and SD writes.
 
-This has not been validated on hardware yet, and saves that have not reached the SD card are lost in a power cut. See [doc/folder-cards.md](doc/folder-cards.md) before using it.
+This has not been extensively tested on hardware yet, and saves that have not reached the SD card are lost in a power cut. See [doc/folder-cards.md](doc/folder-cards.md) before using it.
 
 ## General: USB Storage Mode
 
@@ -33,7 +33,7 @@ USB storage mode gives the computer the whole card, and the firmware does not re
 
 USB on the RP2040 is limited to 12 Mbit/s, so expect under 1 MB/s. It's meant for saves and settings. If you're transferring ISOs or other large files use a microSD card reader.
 
-# sd2psXtd features, continued...
+# sd2psXtd features, continued
 
 sd2psXtd is an extended firmware for the popular *Multipurpose MemoryCard Emulator* sd2psx by developer @xyzz (see [here](https://github.com/sd2psx)). It combines cutting-edge extended functionality (like game ID switching, file system access, and dynamic mode selection) with the rock-solid performance of the original sd2psx firmware.
 
