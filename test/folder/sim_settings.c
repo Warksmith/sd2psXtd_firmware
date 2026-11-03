@@ -6,10 +6,11 @@
 bool sim_new_card_folder;
 uint8_t sim_ps2_cardsize = 8;
 int sim_ps2_variant = PS2_VARIANT_RETAIL;
+int sim_mode = MODE_PS2;
 
 int settings_get_mode(bool current) {
     (void)current;
-    return MODE_PS2;
+    return sim_mode;
 }
 
 int settings_get_ps2_variant(void) {

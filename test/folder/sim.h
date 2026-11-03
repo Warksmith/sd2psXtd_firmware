@@ -10,6 +10,7 @@
 extern bool sim_new_card_folder; /* NewCardBackend=FOLDER */
 extern uint8_t sim_ps2_cardsize;
 extern int sim_ps2_variant;
+extern int sim_mode;
 extern long sim_op_count;
 extern long sim_crash_at;       /* cut power at this operation number */
 extern long sim_fail_at;        /* fail this operation */

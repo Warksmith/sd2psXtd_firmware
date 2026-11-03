@@ -4,6 +4,7 @@
 
 ### Features
 
+- Added trailing-prefix wildcards to `Game2Folder.ini`, with exact IDs taking precedence over the longest matching prefix. Added per-console `UseDefaultCard=ON` and `DefaultCard` for an optional fallback when no mapping matches (off by default).
 - Added experimental folder-backed PS2 memory cards for PSRAM builds, enabled per card with `StorageBackend=FOLDER`. See `doc/folder-cards.md`, which lists what has and has not been run on hardware.
 - Folder cards appear as soon as their directories are built, and their files are read behind them with console requests first. A file that cannot be read hides the card and drops what the console wrote since it appeared. An unchanged folder is built from its index, using a new `.ps2meta/tree.ok`. A folder-only boot card has started FreeMcBoot from one cold boot, which has not been repeated; `FolderSnapshot=ON` is the more tested route for a boot card.
 - Added `FolderSnapshot=ON` for folder cards, which keeps an 8 MB copy on SD so the card can be served immediately at the next mount, as an image is. Off by default. Only lightly tried on hardware.
@@ -12,6 +13,7 @@
 
 ### Bug Fixes
 
+- Clear stale Game2Folder lookup results when no mapping applies.
 - Fixed the SD ini reader dropping the last line of a file that does not end in a newline, which silently ignored that setting in card and firmware settings files.
 
 ## 1.4.0 - 2026-07-08

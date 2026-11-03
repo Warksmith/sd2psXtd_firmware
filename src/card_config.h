@@ -14,5 +14,7 @@ uint8_t card_config_get_ps2_cardsize(const char* card_folder, const char* card_b
 bool card_config_get_ps2_folder_backend(const char* card_folder, const char* card_base, char* image_path, bool boot_card);
 /* True if the card's ini asks for FolderSnapshot=ON, which is off by default. */
 bool card_config_get_ps2_folder_snapshot(const char* card_folder, const char* card_base);
+/* Exact ID > longest trailing-star prefix > opt-in DefaultCard, within the current
+ * console section. Clears the output when no mapping applies. */
 void card_config_get_card_folder(const char* game_id, char* card_folder, size_t card_folder_max_len);
 bool card_config_read_image(uint8_t buff[1032], const char* card_folder, const char* card_base, int chan_idx);
