@@ -77,6 +77,7 @@ static struct {
 
 static int have_oled;
 static lv_obj_t *splash_image;
+static lv_obj_t *usb_status_label;
 static bool usb_screen, wait_button_release;
 static bool usb_nav_hidden, usb_activity_hidden;
 static enum {
@@ -1129,8 +1130,19 @@ static void create_splash(void) {
     lv_img_set_src(splash_image, &splash_img_dsc);
     lv_obj_center(splash_image);
 
+    usb_status_label = ui_label_create_at(scr_splash, 0, 46, "");
+    lv_obj_set_width(usb_status_label, 128);
+    lv_obj_set_style_text_align(usb_status_label, LV_TEXT_ALIGN_CENTER, 0);
+    lv_obj_set_style_bg_color(usb_status_label, COLOR_BG, 0);
+    lv_obj_set_style_bg_opa(usb_status_label, LV_OPA_COVER, 0);
+    lv_obj_add_flag(usb_status_label, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_event_cb(scr_splash, evt_scr_main, LV_EVENT_ALL, NULL);
 
+}
+
+void gui_usb_storage_status(const char *text) {
+    if (usb_screen && usb_status_label)
+        lv_label_set_text(usb_status_label, text);
 }
 
 void gui_usb_storage(bool enabled) {
@@ -1143,6 +1155,8 @@ void gui_usb_storage(bool enabled) {
         usb_activity_hidden = lv_obj_has_flag(g_activity_frame, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(g_navbar, LV_OBJ_FLAG_HIDDEN);
         lv_obj_add_flag(g_activity_frame, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_clear_flag(usb_status_label, LV_OBJ_FLAG_HIDDEN);
+        gui_usb_storage_status("Preparing...");
         splash_load_usb();
         lv_img_cache_invalidate_src(lv_img_get_src(splash_image));
         lv_obj_invalidate(splash_image);
@@ -1150,6 +1164,7 @@ void gui_usb_storage(bool enabled) {
         oled_update_last_action_time();
         lv_refr_now(NULL);
     } else {
+        lv_obj_add_flag(usb_status_label, LV_OBJ_FLAG_HIDDEN);
         if (!usb_nav_hidden) lv_obj_clear_flag(g_navbar, LV_OBJ_FLAG_HIDDEN);
         if (!usb_activity_hidden) lv_obj_clear_flag(g_activity_frame, LV_OBJ_FLAG_HIDDEN);
         wait_button_release = true;

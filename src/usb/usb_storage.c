@@ -14,6 +14,17 @@
 
 static bool eject_pending, finished;
 static uint32_t sectors;
+static uint64_t eject_complete_at;
+#define EJECT_STATUS_US 1000000u
+#if WITH_GUI
+static int shown_status;
+#endif
+
+usb_storage_status_t usb_storage_get_status(void) {
+    if (finished) return USB_STORAGE_EJECTED;
+    if (eject_pending) return USB_STORAGE_EJECTING;
+    return tud_mounted() ? USB_STORAGE_CONNECTED : USB_STORAGE_WAITING;
+}
 
 void usb_storage_init(void) {
     /* The previous USB session has stopped; allow the host to see disconnect. */
@@ -25,17 +36,29 @@ void usb_storage_init(void) {
         fatal(ERR_SDCARD, "USB storage: invalid SD capacity");
     eject_pending = finished = false;
 #if WITH_GUI
+    shown_status = -1;
     gui_usb_storage(true);
 #endif
 }
 
 bool usb_storage_task(void) {
 #if WITH_GUI
+    usb_storage_status_t status = usb_storage_get_status();
+    if ((int)status != shown_status) {
+        static const char *const labels[] = {
+            "Waiting for PC", "Connected\nEject to return",
+            "Ejecting...", "Ejected\nSafe to unplug"
+        };
+        gui_usb_storage_status(labels[status]);
+        shown_status = status;
+    }
     input_task();
     gui_task();
     oled_task();
 #endif
-    return !finished;
+    /* Keep servicing USB during the brief acknowledgement display. The medium
+     * is already unavailable; only an explicitly completed eject starts this. */
+    return !finished || time_us_64() - eject_complete_at < EJECT_STATUS_US;
 }
 
 void usb_storage_deinit(void) {
@@ -156,6 +179,8 @@ int32_t tud_msc_scsi_cb(uint8_t lun, const uint8_t cmd[16], void *buf, uint16_t 
 /* Called by TinyUSB after the command status has actually reached the host. */
 void tud_msc_scsi_complete_cb(uint8_t lun, const uint8_t cmd[16]) {
     (void)lun;
-    if (cmd[0] == 0x1b && (cmd[4] & 0xf3) == 2 && eject_pending)
+    if (cmd[0] == 0x1b && (cmd[4] & 0xf3) == 2 && eject_pending && !finished) {
+        eject_complete_at = time_us_64();
         finished = true;
+    }
 }

@@ -15,6 +15,10 @@ int32_t tud_msc_read10_cb(uint8_t, uint32_t, uint32_t, void *, uint32_t);
 int32_t tud_msc_write10_cb(uint8_t, uint32_t, uint32_t, uint8_t *, uint32_t);
 
 static uint8_t disk[40][512], sense;
+static uint64_t now;
+static bool mounted;
+uint64_t time_us_64(void) { return now; }
+bool tud_mounted(void) { return mounted; }
 static int saved_mode = USB_MODE_UART, requested_mode = USB_MODE_MASS;
 static jmp_buf fatal_return;
 static bool fatal_expected;
@@ -76,6 +80,9 @@ int main(void) {
     unmount_ok = true;
     usb_storage_init();
     assert(usb_storage_task());
+    assert(usb_storage_get_status() == USB_STORAGE_WAITING);
+    mounted = true;
+    assert(usb_storage_get_status() == USB_STORAGE_CONNECTED);
     session_mode = USB_MODE_MASS;
     assert(tud_msc_test_unit_ready_cb(0));
     memset(disk, 0x55, sizeof(disk));
@@ -108,6 +115,12 @@ int main(void) {
     assert(tud_msc_start_stop_cb(0, 0, false, false));
     tud_msc_scsi_complete_cb(0, sync);
     assert(usb_storage_task() && tud_msc_test_unit_ready_cb(0));
+    /* Inactivity or loss of configuration is not evidence of host eject. */
+    now += 10000000;
+    assert(usb_storage_task() && usb_storage_get_status() == USB_STORAGE_CONNECTED);
+    mounted = false;
+    assert(usb_storage_task() && usb_storage_get_status() == USB_STORAGE_WAITING);
+    mounted = true;
     sync_ok = false;
     assert(tud_msc_scsi_cb(0, sync, NULL, 0) == -1);
     assert(!tud_msc_start_stop_cb(0, 0, false, true));
@@ -117,11 +130,17 @@ int main(void) {
     assert(tud_msc_scsi_cb(0, sync, NULL, 0) == 0);
     assert(tud_msc_start_stop_cb(0, 0, false, true));
     assert(!tud_msc_test_unit_ready_cb(0) && usb_storage_task());
+    assert(usb_storage_get_status() == USB_STORAGE_EJECTING);
     assert(tud_msc_write10_cb(0, 0, 0, buf, 512) == -1);
     uint8_t stop[16] = {0x1b};
     tud_msc_scsi_complete_cb(0, stop);
     assert(usb_storage_task());
     tud_msc_scsi_complete_cb(0, eject);
+    assert(usb_storage_get_status() == USB_STORAGE_EJECTED && usb_storage_task());
+    now += 999999;
+    assert(usb_storage_task());
+    tud_msc_scsi_complete_cb(0, eject); /* duplicate completion cannot restart timer */
+    now++;
     assert(!usb_storage_task());
     mount_ok = false;
     expect_failure(usb_storage_deinit);

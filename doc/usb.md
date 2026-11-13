@@ -54,3 +54,9 @@ The shortcut uses the same upstream USB session, CDC console and explicit host-e
 ## Batched storage transfers
 
 Mass mode uses a 16 KiB USB transfer buffer and sends contiguous whole sectors to the SD driver in batches. Partial-sector heads and tails retain upstream's read/modify/write behavior. Bounds checks, exclusive ownership, synchronization and explicit eject are unchanged. The larger buffer uses 15.5 KiB more static RAM; throughput improvements require measurement on the device and are not claimed from host tests.
+
+## Storage status display
+
+The USB screen distinguishes waiting for a computer, connected storage, eject in progress and completed eject. After an explicit host eject has synchronized the card and its response has completed, it shows `Ejected / Safe to unplug` for one second while continuing to service USB, then returns to the previous normal profile. The ejected medium rejects further I/O during this interval.
+
+Suspension, inactivity and loss of USB configuration do not trigger the safe message or release storage ownership. This deliberately replaces the old fork's suspend-based heuristic. Always eject through the host OS first.
