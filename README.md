@@ -3,6 +3,8 @@
 
 # sd2psXtd Firmware
 
+This fork's `integration` branch combines independently maintained features on upstream **1.5.0**: PS2 folder-backed cards, extended Game2Folder mapping, an INI parsing fix, and USB improvements. USB storage uses upstream's session, ownership and eject implementation, extended with the Button 1 startup shortcut, batched transfers and OLED status messages. See [fork features and branch layout](doc/fork.md) for configuration, review bases and validation details.
+
 sd2psXtd is an extended firmware for the popular *Multipurpose MemoryCard Emulator* sd2psx by developer @xyzz (see [here](https://github.com/sd2psx)). It combines cutting-edge extended functionality (like game ID switching, file system access, and dynamic mode selection) with the rock-solid performance of the original sd2psx firmware.
 
 It provides the same functionality as the official stable firmware and extends it with the following features:
