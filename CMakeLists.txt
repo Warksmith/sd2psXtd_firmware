@@ -44,6 +44,7 @@ add_subdirectory(ext/)
 
 add_executable(${TARGET_NAME}
     src/main.c
+    src/usb/usb_startup.c
     src/ps2.c
     src/ps1.c
 
