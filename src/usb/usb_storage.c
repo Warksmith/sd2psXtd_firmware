@@ -84,6 +84,22 @@ static int32_t transfer(uint8_t lun, uint32_t lba, uint32_t offset,
     uint32_t remaining = size;
     while (remaining) {
         uint32_t block = pos / 512, off = pos % 512;
+        /* Batch the aligned middle; keep upstream read/modify/write handling
+         * for a partial head or tail. Bounds and ownership were checked above. */
+        if (!off && remaining >= 512) {
+            uint32_t count = remaining / 512;
+            bool ok = write ? sd_write_sectors(block, bytes, count)
+                            : sd_read_sectors(block, bytes, count);
+            if (!ok) {
+                tud_msc_set_sense(lun, SCSI_SENSE_MEDIUM_ERROR, write ? 0x0c : 0x11, 0);
+                return -1;
+            }
+            uint32_t n = count * 512;
+            remaining -= n;
+            bytes += n;
+            pos += n;
+            continue;
+        }
         uint32_t n = 512 - off;
         if (n > remaining) n = remaining;
         if (!write || off || n != 512) {

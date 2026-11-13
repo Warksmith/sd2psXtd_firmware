@@ -50,3 +50,7 @@ Select **USB Mode → PS3 MCA** for adaptor emulation or **USB Mode → Serial**
 Hold Button 1 while connecting USB power to enter temporary Mass mode directly. Button 2 enters the firmware bootloader and wins if both buttons are held. With neither held, normal startup is unchanged; the board's dedicated BOOTSEL button is unchanged.
 
 The shortcut uses the same upstream USB session, CDC console and explicit host-eject return as the menu. It does not persist Mass mode or change the saved Serial/PS3 MCA preference. The SD card must still have a filesystem the firmware can mount. Connect using USB only when using this shortcut; simultaneous console/USB electrical safety has not been validated here.
+
+## Batched storage transfers
+
+Mass mode uses a 16 KiB USB transfer buffer and sends contiguous whole sectors to the SD driver in batches. Partial-sector heads and tails retain upstream's read/modify/write behavior. Bounds checks, exclusive ownership, synchronization and explicit eject are unchanged. The larger buffer uses 15.5 KiB more static RAM; throughput improvements require measurement on the device and are not claimed from host tests.
