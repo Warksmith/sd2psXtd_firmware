@@ -96,3 +96,5 @@ SCXS-23456=FolderName2
 
 *Note: Be aware: Long folder names may not be displayed correctly and may result in stuttering of MMCE games due to scrolling.*
 *Note 2: Make sure there is an empty line at the end of the ini file.*
+
+INI files may end immediately after the last value; a trailing newline is optional. LF and CRLF line endings and a UTF-8 byte order mark are supported.
