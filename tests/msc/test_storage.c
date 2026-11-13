@@ -14,7 +14,7 @@ int32_t tud_msc_scsi_cb(uint8_t, const uint8_t[16], void *, uint16_t);
 int32_t tud_msc_read10_cb(uint8_t, uint32_t, uint32_t, void *, uint32_t);
 int32_t tud_msc_write10_cb(uint8_t, uint32_t, uint32_t, uint8_t *, uint32_t);
 
-static uint8_t disk[3][512], sense;
+static uint8_t disk[40][512], sense;
 static int saved_mode = USB_MODE_UART, requested_mode = USB_MODE_MASS;
 static jmp_buf fatal_return;
 static bool fatal_expected;
@@ -40,16 +40,28 @@ static bool sync_ok = true, mount_ok = true, io_ok = true, unmount_ok = true;
 bool sd_unmount(void) { return unmount_ok; }
 bool sd_remount(void) { return mount_ok; }
 bool sd_sync_device(void) { return sync_ok; }
-uint32_t sd_sector_count(void) { return 3; }
+uint32_t sd_sector_count(void) { return 40; }
 bool sd_read_sector(uint32_t n, uint8_t *dst) {
-    assert(n < 3);
+    assert(n < 40);
     if (!io_ok) return false;
     memcpy(dst, disk[n], 512); return true;
 }
 bool sd_write_sector(uint32_t n, const uint8_t *src) {
-    assert(n < 3);
+    assert(n < 40);
     if (!io_ok) return false;
     memcpy(disk[n], src, 512); return true;
+}
+static unsigned reads, writes;
+static size_t last_count;
+bool sd_read_sectors(uint32_t sector, uint8_t *dst, size_t count) {
+    assert(sector + count <= 40); reads++; last_count = count;
+    if (!io_ok) return false;
+    memcpy(dst, disk[sector], count * 512); return true;
+}
+bool sd_write_sectors(uint32_t sector, const uint8_t *src, size_t count) {
+    assert(sector + count <= 40); writes++; last_count = count;
+    if (!io_ok) return false;
+    memcpy(disk[sector], src, count * 512); return true;
 }
 void tud_msc_set_sense(uint8_t lun, uint8_t key, uint8_t asc, uint8_t ascq) {
     (void)lun; (void)asc; (void)ascq; sense = key;
@@ -73,12 +85,26 @@ int main(void) {
     assert(disk[2][75] == 0xab && disk[2][76] == 0x55);
     assert(tud_msc_read10_cb(0, 0, 500, out, sizeof(out)) == 600);
     assert(!memcmp(buf, out, sizeof(buf)));
-    assert(tud_msc_read10_cb(0, 3, 0, out, 1) == -1 && sense == 5);
+    assert(tud_msc_read10_cb(0, 40, 0, out, 1) == -1 && sense == 5);
     assert(tud_msc_write10_cb(0, UINT32_MAX, UINT32_MAX, buf, 1) == -1);
-    assert(tud_msc_read10_cb(0, 2, 512, out, 0) == 0);
+    assert(tud_msc_read10_cb(0, 39, 512, out, 0) == 0);
     io_ok = false;
     assert(tud_msc_read10_cb(0, 0, 0, out, 512) == -1 && sense == 3);
     io_ok = true;
+    /* A 16 KiB transfer reaches the driver in one batch, preserving bytes. */
+    uint8_t large[16384], copied[16384];
+    for (size_t i = 0; i < sizeof(large); i++) large[i] = (uint8_t)(i * 17);
+    unsigned before = writes;
+    assert(tud_msc_write10_cb(0, 3, 0, large, sizeof(large)) == sizeof(large));
+    assert(writes == before + 1 && last_count == 32);
+    before = reads;
+    assert(tud_msc_read10_cb(0, 3, 0, copied, sizeof(copied)) == sizeof(copied));
+    assert(reads == before + 1 && last_count == 32 && !memcmp(large, copied, sizeof(large)));
+    io_ok = false;
+    assert(tud_msc_write10_cb(0, 3, 0, large, sizeof(large)) == -1 && sense == 3);
+    io_ok = true;
+    before = writes;
+    assert(tud_msc_write10_cb(0, 39, 0, large, 1024) == -1 && writes == before);
     assert(tud_msc_start_stop_cb(0, 0, false, false));
     tud_msc_scsi_complete_cb(0, sync);
     assert(usb_storage_task() && tud_msc_test_unit_ready_cb(0));

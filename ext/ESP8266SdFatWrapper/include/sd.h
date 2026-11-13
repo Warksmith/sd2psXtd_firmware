@@ -98,3 +98,7 @@ int sd_seek64(int fd, int64_t offset, int whence);
 uint64_t sd_tell64(int fd);
 
 sd_cid_t sd_get_CID(void);
+
+/* Exclusive USB ownership only. Counts are in 512-byte sectors. */
+bool sd_read_sectors(uint32_t sector, uint8_t *dst, size_t count);
+bool sd_write_sectors(uint32_t sector, const uint8_t *src, size_t count);

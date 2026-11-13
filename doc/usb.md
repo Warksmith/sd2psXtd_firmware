@@ -44,3 +44,7 @@ set variant <retail|proto|conquest|arcade>
 **PS3 MCA** mode presents the currently selected PS1 or PS2 card over USB as a Sony PS3 Memory Card Adaptor, allowing compatible software to access the emulated card. Select the card and channel using the device controls, and select PS1 or PS2 mode as appropriate.
 
 Select **USB Mode → PS3 MCA** for adaptor emulation or **USB Mode → Serial** for normal operation. These correspond to `MCA=ON` and `MCA=OFF` in the `[General]` section of the settings file. The serial command interface is unavailable while PS3 MCA mode is enabled.
+
+## Batched storage transfers
+
+Mass mode uses a 16 KiB USB transfer buffer and sends contiguous whole sectors to the SD driver in batches. Partial-sector heads and tails retain upstream's read/modify/write behavior. Bounds checks, exclusive ownership, synchronization and explicit eject are unchanged. The larger buffer uses 15.5 KiB more static RAM; throughput improvements require measurement on the device and are not claimed from host tests.

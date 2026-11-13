@@ -107,6 +107,15 @@ extern "C" bool sd_write_sector(uint32_t sector, const uint8_t *src) {
     return sd.card()->writeSector(sector, src);
 }
 
+extern "C" bool sd_read_sectors(uint32_t sector, uint8_t *dst, size_t count) {
+    while (sd.card()->isBusy()) tight_loop_contents();
+    return sd.card()->readSectors(sector, dst, count);
+}
+extern "C" bool sd_write_sectors(uint32_t sector, const uint8_t *src, size_t count) {
+    while (sd.card()->isBusy()) tight_loop_contents();
+    return sd.card()->writeSectors(sector, src, count);
+}
+
 void sdCsInit(SdCsPin_t pin) {
     gpio_init(pin);
     gpio_set_dir(pin, 1);
