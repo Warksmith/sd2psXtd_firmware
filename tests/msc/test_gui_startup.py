@@ -45,16 +45,11 @@ def time_return():
 put(['time_us_64','get_absolute_time'],time_return)
 for n in syms:
  if n.startswith('settings_get_'):put([n],lambda:ret(0))
-mca_enabled = False
-mca_selections = []
-def set_mca():
- global mca_enabled
- mca_enabled = bool(reg(0))
- mca_selections.append(mca_enabled)
- ret()
-put(['settings_set_mca_enabled'],set_mca)
-put(['settings_get_mca_enabled'],lambda:ret(mca_enabled))
+# Optimized builds may inline accessors; run the real settings state and stub I/O.
+hooks.pop(syms['settings_get_mca_enabled'], None)
 hooks.pop(syms['settings_get_usb_mode'], None)
+put(['multicore_lockout_victim_is_initialized', 'wear_leveling_write'], lambda:ret())
+put(['sd_open'], lambda:ret(-1))
 put(['settings_get_ps2_cardsize'],lambda:ret(8))
 put(['sd_get_CID'],lambda:(u.mem_write(reg(0),bytes(16)),ret(reg(0))))
 put(['__wrap_memset','memset'],lambda:(u.mem_write(reg(0),bytes([reg(1)&255])*reg(2)),ret(reg(0))))
@@ -96,7 +91,11 @@ def call(name, *args):
     for i, value in enumerate(args):
         u.reg_write(R[i], value)
     u.reg_write(UC_ARM_REG_LR, 0x30000001)
-    u.emu_start(syms[name] | 1, 0, count=90000000)
+    try:
+        u.emu_start(syms[name] | 1, 0, count=90000000)
+    except Exception:
+        print(f'{name} failed at {u.reg_read(UC_ARM_REG_PC):#x}: {list(trace)}', flush=True)
+        raise
     assert returned, f'{name} did not return: {list(trace)}'
     return reg(0)
 def heap(label):
@@ -132,13 +131,12 @@ call('lv_disp_load_scr', menu_screen)
 for row, enabled in [(uart_row, False), (mca_row, True), (mca_row, True), (uart_row, False), (mca_row, True)]:
     call('lv_event_send', usb_row, 7, 0)  # LV_EVENT_CLICKED
     call('lv_event_send', row, 7, 0)
-    assert mca_enabled == enabled
-assert mca_selections == [False, True, True, False, True]
+    assert bool(call('settings_get_mca_enabled')) == enabled
 call('lv_event_send', usb_row, 7, 0)
 call('lv_event_send', mass_row, 7, 0)
 assert call('settings_get_usb_mode', 1) == 2
 assert call('settings_get_usb_mode', 0) == 1
-assert mca_enabled and mca_selections == [False, True, True, False, True]
+assert call('settings_get_mca_enabled')
 heap('USB icon rendered')
 status_label = struct.unpack('<I', u.mem_read(syms['usb_status_label'], 4))[0]
 assert not call('lv_obj_has_flag', status_label, 1)  # LV_OBJ_FLAG_HIDDEN
@@ -151,7 +149,9 @@ heap('All USB status messages rendered')
 assert call('lv_disp_get_scr_act', 0) == screen
 assert call('lv_img_get_src', widget) == source
 assert bytes(u.mem_read(syms['splash_img'], 1032)) != pixels
-assert bytes(u.mem_read(syms['splash_img'], 1032)) == bytes(u.mem_read(syms['usb_splash_img'], 1032))
+usb_pixels = bytes(u.mem_read(syms['splash_img'], 1032))
+call('splash_load_usb')
+assert bytes(u.mem_read(syms['splash_img'], 1032)) == usb_pixels
 call('settings_set_usb_mode', call('settings_get_usb_mode', 0))
 call('gui_usb_storage', 0)
 assert call('lv_obj_has_flag', status_label, 1)
