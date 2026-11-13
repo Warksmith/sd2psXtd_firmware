@@ -140,12 +140,21 @@ assert call('settings_get_usb_mode', 1) == 2
 assert call('settings_get_usb_mode', 0) == 1
 assert mca_enabled and mca_selections == [False, True, True, False, True]
 heap('USB icon rendered')
+status_label = struct.unpack('<I', u.mem_read(syms['usb_status_label'], 4))[0]
+assert not call('lv_obj_has_flag', status_label, 1)  # LV_OBJ_FLAG_HIDDEN
+for text in ['Waiting for PC', 'Connected\nEject to return', 'Ejecting...', 'Ejected\nSafe to unplug']:
+    u.mem_write(0x20045000, text.encode() + b'\0')
+    call('gui_usb_storage_status', 0x20045000)
+    assert cstr(call('lv_label_get_text', status_label)) == text
+    call('lv_refr_now', 0)
+heap('All USB status messages rendered')
 assert call('lv_disp_get_scr_act', 0) == screen
 assert call('lv_img_get_src', widget) == source
 assert bytes(u.mem_read(syms['splash_img'], 1032)) != pixels
 assert bytes(u.mem_read(syms['splash_img'], 1032)) == bytes(u.mem_read(syms['usb_splash_img'], 1032))
 call('settings_set_usb_mode', call('settings_get_usb_mode', 0))
 call('gui_usb_storage', 0)
+assert call('lv_obj_has_flag', status_label, 1)
 # Normal GUI refresh reloads the card image into the same buffer after remount.
 def read_card_image():
     u.mem_write(reg(0), pixels)
