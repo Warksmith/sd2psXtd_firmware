@@ -18,6 +18,10 @@
 #include "settings.h"
 #include "usb/mca_device.h"
 #include "usb/usb_storage.h"
+#include "usb/usb_startup.h"
+#if WITH_GUI
+#include "gui.h"
+#endif
 #if WITH_PSRAM
 #include "psram/psram.h"
 #endif
@@ -33,19 +37,6 @@
 uint flash_capacity = 0;
 uint flash_border = 0;
 
-
-/* reboot to bootloader if either button is held on startup
-   to make the device easier to flash when assembled inside case */
-static void check_bootloader_reset(void) {
-    /* make sure at least DEBOUNCE interval passes or we won't get inputs */
-    for (int i = 0; i < 2 * DEBOUNCE_MS; ++i) {
-        input_task();
-        sleep_ms(1);
-    }
-
-    if (input_is_down_raw(0) || input_is_down_raw(1))
-        reset_usb_boot(0, 0);
-}
 
 static void debug_task(void) {
 
@@ -81,7 +72,7 @@ int main() {
     int mhz = 240;
     input_init();
     update_flash_capacity();
-    check_bootloader_reset();
+    bool startup_storage = usb_startup_select_storage();
 
     QPRINTF("prepare...\n");
 
@@ -124,12 +115,21 @@ int main() {
          * memory-card backend for this session. Keep the per-session reload
          * so settings changed on SD are observed after every mode switch. */
         settings_load_sd();
+        if (startup_storage) {
+            settings_set_usb_mode(USB_MODE_MASS);
+            startup_storage = false;
+        }
         usb_session_prepare();
         void (*mode_init)(void);
         bool (*mode_task)(void);
         void (*mode_deinit)(void);
         if (USB_MODE_MASS == settings_get_usb_mode(true)) {
             QPRINTF("Starting USB storage mode...\n");
+#if WITH_GUI
+            /* A direct USB boot has not initialized either console's GUI yet.
+             * Initialize while the SD filesystem is still mounted. */
+            gui_init();
+#endif
             mode_init = usb_storage_init;
             mode_task = usb_storage_task;
             mode_deinit = usb_storage_deinit;
