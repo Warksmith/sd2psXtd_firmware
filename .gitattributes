@@ -1,1 +1,2 @@
 test/ini/run.sh text eol=lf
+test/mapping/run.sh text eol=lf
