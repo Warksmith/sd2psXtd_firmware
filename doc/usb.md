@@ -44,3 +44,9 @@ set variant <retail|proto|conquest|arcade>
 **PS3 MCA** mode presents the currently selected PS1 or PS2 card over USB as a Sony PS3 Memory Card Adaptor, allowing compatible software to access the emulated card. Select the card and channel using the device controls, and select PS1 or PS2 mode as appropriate.
 
 Select **USB Mode → PS3 MCA** for adaptor emulation or **USB Mode → Serial** for normal operation. These correspond to `MCA=ON` and `MCA=OFF` in the `[General]` section of the settings file. The serial command interface is unavailable while PS3 MCA mode is enabled.
+
+## Storage status display
+
+The USB screen distinguishes waiting for a computer, connected storage, eject in progress and completed eject. After an explicit host eject has synchronized the card and its response has completed, it shows `Ejected / Safe to unplug` for one second while continuing to service USB, then returns to the previous normal profile. The ejected medium rejects further I/O during this interval.
+
+Suspension, inactivity and loss of USB configuration do not trigger the safe message or release storage ownership. This deliberately replaces the old fork's suspend-based heuristic. Always eject through the host OS first.
