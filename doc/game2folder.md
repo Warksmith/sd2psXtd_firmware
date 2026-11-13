@@ -38,4 +38,3 @@ default option.
 Wildcard matching uses a single prefix comparison per entry, with no heap allocation,
 regex engine, or backtracking. It uses the existing single INI scan during card selection
 and adds no work to memory-card reads or writes.
-
