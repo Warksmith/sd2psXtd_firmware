@@ -35,9 +35,16 @@ int ps2_cardman_read_sector(int sector, void *buf512);
 int ps2_cardman_write_sector(int sector, void *buf512);
 bool ps2_cardman_is_sector_available(int sector);
 void ps2_cardman_mark_sector_available(int sector);
+void ps2_cardman_forget_sectors(void);
 void ps2_cardman_set_priority_sector(int page_idx);
+/* The sector the console is waiting for, or -1. */
+int ps2_cardman_get_priority_sector(void);
 void ps2_cardman_flush(void);
 void ps2_cardman_open(void);
+/* Saves everything PSRAM holds that SD does not, with the console stopped. When this
+ * returns false the card must stay mounted or the changes are lost. */
+bool ps2_cardman_prepare_close(void);
+bool ps2_cardman_can_unload(void);
 void ps2_cardman_close(void);
 int ps2_cardman_get_idx(void);
 int ps2_cardman_get_channel(void);
@@ -66,4 +73,9 @@ void ps2_cardman_set_variant(int variant);
 
 bool ps2_cardman_needs_update(void);
 bool ps2_cardman_is_accessible(void);
+bool ps2_cardman_hidden_from_console(void);
+/* Short text for the display while a folder card is not in sync, otherwise NULL. */
+const char *ps2_cardman_get_storage_status(void);
+bool ps2_cardman_owns_fd(int fd);
+bool ps2_cardman_path_protected(const char *path);
 bool ps2_cardman_is_idle(void);

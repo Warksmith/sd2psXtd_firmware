@@ -71,6 +71,7 @@ uint32_t sd_sector_count(void);
 bool sd_read_sector(uint32_t sector, uint8_t *dst);
 bool sd_write_sector(uint32_t sector, const uint8_t *src);
 int sd_open(const char *path, int oflag);
+int sd_open_at(int dir, const char *name, int oflag);
 int sd_close(int fd);
 void sd_flush(int fd);
 int sd_read(int fd, void *buf, size_t count);

@@ -1,1 +1,3 @@
 test/ini/run.sh text eol=lf
+test/folder/run.sh text eol=lf
+tests/folder_lifecycle/run.sh text eol=lf

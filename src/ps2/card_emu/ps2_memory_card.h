@@ -21,4 +21,5 @@ void ps2_memory_card_enter(void);
  */
 void ps2_memory_card_exit(void);
 
-
+/* First console poll in ms since boot, and polls ignored while hidden. */
+void ps2_memory_card_polls(uint32_t *first_ms, uint32_t *ignored);

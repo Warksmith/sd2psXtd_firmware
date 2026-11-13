@@ -7,6 +7,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <strings.h>
 
 #include "ini.h"
 
@@ -20,12 +21,20 @@
 #define MAX_CFG_PATH_LENGTH         (64)
 #define CUSTOM_CARDS_CONFIG_PATH    (".sd2psx/Game2Folder.ini")
 
+typedef enum {
+    BACKEND_UNSET,
+    BACKEND_IMAGE,
+    BACKEND_FOLDER,
+} card_backend_t;
+
 typedef struct {
     const char *channel_number;
     char *channel_name;
     size_t channel_name_max_len;
     uint8_t card_size;
     uint8_t max_channels;
+    card_backend_t backend;
+    bool folder_snapshot;
 } parse_card_config_t;
 
 typedef struct {
@@ -79,6 +88,22 @@ static int parse_card_configuration(void *user, const char *section, const char 
         int max_channels = atoi(value);
         if (max_channels > 0 && max_channels <= UINT8_MAX) {
             ctx->max_channels = max_channels;
+        }
+    } else if (MATCH("Settings", "StorageBackend")) {
+        if (strcasecmp(value, "FOLDER") == 0) {
+            ctx->backend = BACKEND_FOLDER;
+        } else if (strcasecmp(value, "IMAGE") == 0) {
+            ctx->backend = BACKEND_IMAGE;
+        } else {
+            log(LOG_ERROR, "Ignoring unknown StorageBackend=%s\n", value);
+        }
+    } else if (MATCH("Settings", "FolderSnapshot")) {
+        if (strcasecmp(value, "ON") == 0) {
+            ctx->folder_snapshot = true;
+        } else if (strcasecmp(value, "OFF") == 0) {
+            ctx->folder_snapshot = false;
+        } else {
+            log(LOG_ERROR, "Ignoring unknown FolderSnapshot=%s\n", value);
         }
     }
     #undef MATCH
@@ -199,6 +224,76 @@ uint8_t card_config_get_ps2_cardsize(const char* card_folder, const char* card_b
         sd_close(fd);
     }
     return ctx.card_size;
+}
+
+static bool folder_beside_image(char* image_path) {
+    char *extension = strrchr(image_path, '.');
+    bool found;
+
+    if (extension == NULL)
+        return false;
+
+    strcpy(extension, ".folder");
+    found = sd_exists(image_path);
+    strcpy(extension, ".mcd");
+    return found;
+}
+
+bool card_config_get_ps2_folder_backend(const char* card_folder, const char* card_base, char* image_path, bool boot_card) {
+    char config_path[MAX_CFG_PATH_LENGTH];
+    int fd;
+    parse_card_config_t ctx = {
+        .channel_number = NULL,
+        .channel_name = NULL,
+        .channel_name_max_len = 0,
+        .card_size = 0,
+        .max_channels = 8,
+        .backend = BACKEND_UNSET
+    };
+
+    card_config_get_ini_name(card_folder, card_base, config_path);
+
+    fd = sd_open(config_path, O_RDONLY);
+    if (fd >= 0) {
+        ini_parse_sd_file(fd, parse_card_configuration, &ctx);
+        sd_close(fd);
+    }
+    if (ctx.backend != BACKEND_UNSET)
+        return ctx.backend == BACKEND_FOLDER;
+
+    /* A card that already exists stays what it is, or its saves would vanish behind a
+     * blank card of the other kind. */
+    if (sd_exists(image_path))
+        return false;
+    if (folder_beside_image(image_path))
+        return true;
+
+    /* The boot card has to answer at power-on, which a folder card can miss. */
+    return settings_get_ps2_new_card_folder() && !boot_card
+           && settings_get_ps2_variant() == PS2_VARIANT_RETAIL
+           && (ctx.card_size != 0 ? ctx.card_size : settings_get_ps2_cardsize()) == 8;
+}
+
+bool card_config_get_ps2_folder_snapshot(const char* card_folder, const char* card_base) {
+    char config_path[MAX_CFG_PATH_LENGTH];
+    int fd;
+    parse_card_config_t ctx = {
+        .channel_number = NULL,
+        .channel_name = NULL,
+        .channel_name_max_len = 0,
+        .card_size = 0,
+        .max_channels = 8,
+        .folder_snapshot = false
+    };
+
+    card_config_get_ini_name(card_folder, card_base, config_path);
+
+    fd = sd_open(config_path, O_RDONLY);
+    if (fd >= 0) {
+        ini_parse_sd_file(fd, parse_card_configuration, &ctx);
+        sd_close(fd);
+    }
+    return ctx.folder_snapshot;
 }
 
 uint8_t card_config_get_max_channels(const char* card_folder, const char* card_base) {

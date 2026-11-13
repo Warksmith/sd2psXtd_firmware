@@ -28,6 +28,8 @@
 
 
 
+static volatile uint32_t first_poll_us, ignored_polls;
+
 uint8_t term = 0xFF;
 
 static int memcard_running;
@@ -117,6 +119,8 @@ static void __time_critical_func(mc_main_loop)(void) {
 
 
         if (cmd == PS2_SIO2_CMD_IDENTIFIER) {
+            if (first_poll_us == 0)
+                first_poll_us = time_us_32();
             if (ps2_card_backend->probe()) {
                 continue;
             }
@@ -126,8 +130,9 @@ static void __time_critical_func(mc_main_loop)(void) {
                 log(LOG_WARN, "Ignoring mcman for another %i requests\n", mmceman_mcman_retry_counter);
                 mmceman_mcman_retry_counter--;
                 continue;
-            } else if (!ps2_cardman_is_accessible() && (ps2_cardman_get_state() == PS2_CM_STATE_GAMEID)) {
-                /* game id card is not yet accessible */
+            } else if (ps2_cardman_hidden_from_console()) {
+                /* No reads, writes or erases until the folder is ready. */
+                ignored_polls++;
                 continue;
             }
 
@@ -306,4 +311,9 @@ void ps2_memory_card_enter(void) {
     mc_enter_request = 1;
     while (!mc_enter_response) {}
     mc_enter_request = mc_enter_response = 0;
+}
+
+void ps2_memory_card_polls(uint32_t *first_ms, uint32_t *ignored) {
+    *first_ms = first_poll_us / 1000U;
+    *ignored = ignored_polls;
 }

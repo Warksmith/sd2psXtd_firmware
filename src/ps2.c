@@ -128,14 +128,17 @@ bool ps2_task(void) {
         keystore_confirm();
     }
 
-    if (((MODE_PS1 == settings_get_mode(true))
-            || ps2_variant != settings_get_ps2_variant()
-            || USB_MODE_MASS == settings_get_usb_mode(true))
-        && (ps2_cardman_is_idle())
-        && !ps2_history_tracker_needs_refresh())
+    /* A transport change is also an exit request. Keep servicing the old card
+     * until its folder writes and history are safe, even if its backend wants out. */
+    bool exit_requested = !backend_running
+        || MODE_PS1 == settings_get_mode(true)
+        || ps2_variant != settings_get_ps2_variant()
+        || USB_MODE_MASS == settings_get_usb_mode(true);
+    if (exit_requested && ps2_cardman_is_idle()
+        && ps2_cardman_can_unload() && !ps2_history_tracker_needs_refresh())
         return false;
 
-    return backend_running;
+    return true;
 }
 
 void ps2_deinit(void) {
@@ -145,5 +148,17 @@ void ps2_deinit(void) {
         ps2_mc_data_interface_task();
     multicore_reset_core1();
     ps2_mc_data_interface_flush();
+    /* Recheck after core 1 stops: a final write may race the task's exit check.
+     * Never hand the SD card to USB while the only copy of a save is in PSRAM. */
+    while (!ps2_cardman_prepare_close()) {
+#if WITH_GUI
+        gui_usb_storage(false);
+        gui_request_refresh();
+        gui_task();
+        oled_task();
+#endif
+        ps2_cardman_task();
+        sleep_ms(10);
+    }
     ps2_cardman_close();
 }
