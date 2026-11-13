@@ -5,4 +5,5 @@ tests/folder_lifecycle/run.sh text eol=lf
 misc/docker/build.sh text eol=lf
 misc/docker/build_release.sh text eol=lf
 tests/usb_startup/run.sh text eol=lf
+tests/mca_current/run.sh text eol=lf
 tests/msc/run.sh text eol=lf
