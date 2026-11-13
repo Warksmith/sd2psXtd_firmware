@@ -98,3 +98,5 @@ SCXS-23456=FolderName2
 *Note 2: Make sure there is an empty line at the end of the ini file.*
 
 INI files may end immediately after the last value; a trailing newline is optional. LF and CRLF line endings and a UTF-8 byte order mark are supported.
+
+See [Game2Folder wildcards and default card](game2folder.md) for prefix mappings and opt-in fallback settings.
