@@ -93,3 +93,7 @@ Please note: This is only possible using a special FreePSXBoot Version provided 
 ## PS1: Net Yaroze Support
 
 *sd2psXtd* will act as a Net Yaroze Access Card, if used with the Net Yaroze Software.
+
+## Folder-backed PS2 memory cards
+
+Optional PSRAM-backed 8 MB folder cards store saves as files. See [folder cards](folder-cards.md) for configuration, snapshots, recovery and hardware-testing limits.

@@ -1,4 +1,5 @@
 #include "settings.h"
+#include "ps2_cardman.h"
 #include "ps2_card_backend_mca.h"
 #include "usb/mca_bridge.h"
 #include "usb/mca_page.h"
@@ -23,6 +24,11 @@ static bool begin(void) {
     while (!ps2_mc_exit_request) {
         if (!mca_bridge_begin(&mca_bridge))
             continue;
+        if (!ps2_cardman_is_accessible()) {
+            mca_bridge_finish(&mca_bridge, false);
+            ps2_card_active = false;
+            continue;
+        }
         ps2_card_active = true;
         if (mca_bridge.input[1] == 0x42)
             return true;

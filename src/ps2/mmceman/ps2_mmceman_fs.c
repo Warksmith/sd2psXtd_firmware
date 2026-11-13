@@ -83,7 +83,10 @@ void ps2_mmceman_fs_run(void)
 
     switch (mmceman_fs_operation) {
         case MMCEMAN_FS_OPEN:
-            op_data.fd = sd_open((const char*)op_data.buffer[0], op_data.flags);
+            if ((op_data.flags & (O_WRONLY | O_RDWR | O_CREAT | O_TRUNC | O_APPEND)) && ps2_cardman_path_protected((const char*)op_data.buffer[0]))
+                op_data.fd = -1;
+            else
+                op_data.fd = sd_open((const char*)op_data.buffer[0], op_data.flags);
 
             if (op_data.fd < 0) {
                 log(LOG_ERROR, "Open failed, fd: %i\n", op_data.fd);
@@ -250,17 +253,17 @@ void ps2_mmceman_fs_run(void)
         break;
 
         case MMCEMAN_FS_REMOVE:
-            op_data.rv = sd_remove((const char*)op_data.buffer[0]);
+            op_data.rv = ps2_cardman_path_protected((const char*)op_data.buffer[0]) ? -1 : sd_remove((const char*)op_data.buffer[0]);
             mmceman_fs_operation = MMCEMAN_FS_NONE;
         break;
 
         case MMCEMAN_FS_MKDIR:
-            op_data.rv = sd_mkdir((const char*)op_data.buffer[0]);
+            op_data.rv = ps2_cardman_path_protected((const char*)op_data.buffer[0]) ? -1 : sd_mkdir((const char*)op_data.buffer[0]);
             mmceman_fs_operation = MMCEMAN_FS_NONE;
         break;
 
         case MMCEMAN_FS_RMDIR:
-            op_data.rv = sd_rmdir((const char*)op_data.buffer[0]);
+            op_data.rv = ps2_cardman_path_protected((const char*)op_data.buffer[0]) ? -1 : sd_rmdir((const char*)op_data.buffer[0]);
             mmceman_fs_operation = MMCEMAN_FS_NONE;
         break;
 
@@ -341,7 +344,7 @@ void ps2_mmceman_fs_run(void)
         case MMCEMAN_FS_RESET:
             //SD max files
             for (int i = 0; i < 16; i++) {
-                if (i != cardman_fd) {
+                if (i != cardman_fd && !ps2_cardman_owns_fd(i)) {
                     sd_close(i);
                 }
             }
@@ -355,7 +358,10 @@ void ps2_mmceman_fs_run(void)
         break;
 
         case MMCEMAN_FS_RENAME:
-            op_data.rv = sd_rename((const char*)op_data.buffer[0], (const char*)op_data.buffer[1]);
+            if (ps2_cardman_path_protected((const char*)op_data.buffer[0]) || ps2_cardman_path_protected((const char*)op_data.buffer[1]))
+                op_data.rv = -1;
+            else
+                op_data.rv = sd_rename((const char*)op_data.buffer[0], (const char*)op_data.buffer[1]);
             mmceman_fs_operation = MMCEMAN_FS_NONE;
 
         default:
