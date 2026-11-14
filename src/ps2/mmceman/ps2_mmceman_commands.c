@@ -89,7 +89,10 @@ inline __attribute__((always_inline)) void __time_critical_func(ps2_mmceman_cmd_
      * is busy switching memcards */
     ps2_card_backend->respond(0x0);    receiveOrNextCmd(&cmd); //reserved byte
 
-    if (!ps2_cardman_is_idle()) {
+    /* A queued request still refers to the old card until core 0 consumes it.
+     * Once the new folder card can serve reads, its background fill is not a
+     * card switch: IGR clients have a bounded wait before loading their ELF. */
+    if (mmceman_cmd != 0 || !ps2_cardman_is_ready()) {
         status |= 1;
     }
 

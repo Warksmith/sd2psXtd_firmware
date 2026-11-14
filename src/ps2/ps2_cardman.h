@@ -79,3 +79,5 @@ const char *ps2_cardman_get_storage_status(void);
 bool ps2_cardman_owns_fd(int fd);
 bool ps2_cardman_path_protected(const char *path);
 bool ps2_cardman_is_idle(void);
+/* Console-facing readiness; background folder reads need not be complete. */
+bool ps2_cardman_is_ready(void);
