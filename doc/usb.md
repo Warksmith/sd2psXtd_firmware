@@ -1,5 +1,12 @@
 # USB Interfaces
 
+USB session initialization leaves clock, GPIO and UART setup to the firmware's
+board variant. It does not run TinyUSB's generic Pico example-board initializer,
+which would otherwise enable a 115,200-baud UART even in USB-debug builds and
+make console-side debug prints block on that unintended output. Device USB is
+initialized by `tusb_init()` when the selected session starts. The compiled-ELF
+check `tests/msc/test_usb_init.py` verifies this ownership boundary.
+
 [← Back to README](../README.md)
 
 ## USB Modes

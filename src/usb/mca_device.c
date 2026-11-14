@@ -2,7 +2,6 @@
 
 #include "device/usbd.h"
 #include "device/usbd_pvt.h"
-#include "bsp/board.h"
 #include "config.h"
 #include "hardware/watchdog.h"
 #include "pico/bootrom.h"
@@ -64,7 +63,10 @@ bool mca_device_profile_is_mca(void) {
 
 void usb_session_init(void) {
     mca_protocol_init();
-    board_init();
+    /* main owns clocks, variant pin assignments and the chosen stdio driver.
+     * TinyUSB's example-board initializer enables the Pico UART at 115200 baud
+     * (even for USB-debug builds) and touches its LED pin. Device USB needs only
+     * tusb_init() in usb_session_start(), not that unrelated board setup. */
 }
 
 void usb_session_prepare(void) {

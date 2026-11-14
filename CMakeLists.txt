@@ -85,7 +85,6 @@ target_link_libraries(${TARGET_NAME}
         ps2_card
         sd_fat
         tinyusb_device
-        tinyusb_board
 )
 
 add_dependencies(${TARGET_NAME} gamedb)
