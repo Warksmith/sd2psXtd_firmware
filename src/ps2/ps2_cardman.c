@@ -63,7 +63,7 @@ int current_read_sector = 0, priority_sector = -1;
 static int card_variant;
 static int card_idx;
 static int card_chan;
-static bool needs_update;
+static volatile bool needs_update;
 static uint32_t card_size;
 static cardman_cb_t cardman_cb;
 static char folder_name[MAX_FOLDER_NAME_LENGTH];
@@ -74,7 +74,7 @@ static uint32_t cardprog_pos;
 
 static ps2_cardman_state_t cardman_state;
 
-static enum { CARDMAN_CREATE, CARDMAN_OPEN, CARDMAN_FOLDER_LOAD, CARDMAN_FOLDER_FILL, CARDMAN_IDLE, CARDMAN_UNKNOWN } cardman_operation = CARDMAN_UNKNOWN;
+static volatile enum { CARDMAN_CREATE, CARDMAN_OPEN, CARDMAN_FOLDER_LOAD, CARDMAN_FOLDER_FILL, CARDMAN_IDLE, CARDMAN_UNKNOWN } cardman_operation = CARDMAN_UNKNOWN;
 
 /* Until a folder card's directories exist, there is nothing to serve on demand. */
 static volatile bool folder_hidden;
@@ -988,6 +988,21 @@ bool ps2_cardman_path_protected(const char *path) {
 
 bool ps2_cardman_is_idle(void) {
     return cardman_operation == CARDMAN_IDLE;
+}
+
+bool ps2_cardman_is_ready(void) {
+    if (needs_update || !ps2_cardman_is_accessible())
+        return false;
+#if WITH_PSRAM
+    /* Folder metadata (or a validated snapshot stamp) is already published.
+     * Core 1 can demand-load missing pages while the background sweep continues.
+     * Keep is_idle() stricter: core 0 readers and save/shutdown paths cannot wait
+     * for work that they must themselves service. */
+    if (ps2_folder_card_active()
+        && (cardman_operation == CARDMAN_FOLDER_FILL || cardman_operation == CARDMAN_OPEN))
+        return true;
+#endif
+    return ps2_cardman_is_idle();
 }
 
 void ps2_cardman_init(void) {

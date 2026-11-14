@@ -578,3 +578,9 @@ The main-loop pause is the most important of these. The slice target is 20 ms, b
 The folder engine uses the upstream console/PS3-MCA transport abstraction. A loading or failed card is withheld from both transports. Switching to USB Mass, PS1, another PS2 variant or another USB profile waits for pending folder saves. After stopping core 1, shutdown drains writes again and retries a failed final folder flush without releasing the SD card. An SD error during this stage shows the normal card status; do not remove power while saves remain unsaved.
 
 After host eject, upstream remounts the SD filesystem and reopens the selected card, so folder edits are imported again. The upstream small-card image formatting and per-console channel defaults are retained. Run `sh tests/folder_lifecycle/run.sh` as well as the folder and MCA suites. These simulated checks do not replace physical power-loss and USB/MCA tests.
+
+### MMCE switch readiness
+
+MMCE `GET_STATUS` reports a pending card-switch request as busy even before the main loop consumes it. Once the selected folder card's directory structure or snapshot is published, the protocol reports ready: the console can read pages on demand while `Reading files...` or snapshot loading continues. It does not wait for unrelated files to finish loading before an IGR client can load its return ELF. Image cards retain their existing busy-until-loaded behavior.
+
+Internal idle checks remain stricter. Core 0 readers, history updates, pending-save flushes and shutdown must still wait for the work they cannot service while blocked. This changes the client handoff, not the SD transfer speed. Validate the IGR return on hardware, including large boot folders and snapshots, before relying on the shorter handoff.
